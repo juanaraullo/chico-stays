@@ -8,7 +8,8 @@
 localStorage.setItem('chico.supabase.config', JSON.stringify({ url: 'https://mock-project.supabase.co', key: 'mock-publishable-key-for-tests' }));
 fetch('../index.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
   html = html.replace(/<script src="https:\/\/cdn\.jsdelivr\.net[^>]*><\/script>/, '<script src="mock-supabase.js"><\/script>')
-             .replace(/(href|src)="(manifest\.webmanifest|icons\/)/g, '$1="../$2');
+             .replace(/(href|src)="(manifest\.webmanifest|icons\/)/g, '$1="../$2')
+             .replace("'templates/", "'../templates/");
   document.open(); document.write(html); document.close();
 });
 </script>

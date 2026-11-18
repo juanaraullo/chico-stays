@@ -257,15 +257,15 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   height: calc(var(--tabbar-h) + var(--safe-bottom)); padding-bottom: var(--safe-bottom);
   background: rgba(251,250,248,.86);
   -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
   border-top: .5px solid rgba(0,0,0,.1);
 }
 .tabbar a {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  color: var(--text-3); font-size: 11px; font-weight: 500; transition: color .15s ease;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; white-space: nowrap;
+  color: var(--text-3); font-size: 10.5px; font-weight: 500; transition: color .15s ease;
 }
 .tabbar a svg { width: 25px; height: 25px; }
 .tabbar a.active { color: var(--accent); }
@@ -536,6 +536,27 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 .sum-row .v { font-weight: 650; font-size: 16px; letter-spacing: -.01em; text-align: right; }
 .sum-title { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
 
+/* Guest email page */
+.email-step { margin-bottom: 16px; }
+.guest-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.guest-row .input { flex: 1; min-width: 0; }
+.guest-row .icon-btn { flex: none; color: var(--text-3); }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.thumb { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #EEECE8; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb button { position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-radius: 50%; background: rgba(20,20,22,.6); color: #fff; font-size: 17px; line-height: 30px; text-align: center; }
+.file-btn { position: relative; overflow: hidden; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.mail-preview { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 14px; }
+.mail-preview .mh { color: var(--text-2); margin-bottom: 4px; overflow-wrap: anywhere; }
+.mail-preview .mh b { color: var(--text); font-weight: 600; }
+.mail-preview pre { white-space: pre-wrap; font: inherit; margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.sig-pad { width: 100%; height: 170px; background: #fff; border: 1px dashed var(--line-2); border-radius: 14px; touch-action: none; display: block; }
+.sig-preview { height: 44px; max-width: 160px; object-fit: contain; background: #fff; border-radius: 8px; border: 1px solid var(--line); padding: 2px 6px; }
+.email-actions { display: grid; grid-template-columns: auto 1fr; gap: 10px; margin-top: 18px; }
+.email-actions .btn { white-space: nowrap; padding: 0 16px; }
+.progress-note { font-size: 14px; color: var(--text-2); margin-top: 10px; text-align: center; min-height: 20px; }
+
 /* Floating action button (mobile, one-hand reach) */
 .fab {
   position: fixed; right: 18px; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); z-index: 35;
@@ -719,7 +740,42 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_NHoSMHIQdpKdSnITs09PTw_mAtpq3rj',
 };
 
-const APP_VERSION = '1.1.0';
+/* =====================================================================
+   GUEST EMAIL SETTINGS
+   GOOGLE_CLIENT_ID comes from Google Cloud → APIs & Services →
+   Credentials (OAuth client, type "Web application"). It is public and
+   safe to publish – it only identifies the app to Google.
+   Placeholders: {unit} {checkin} {checkout} {guest} {guests}
+                 {guest_list} {owner_name} {owner_mobile}
+   ===================================================================== */
+const EMAIL_CONFIG = {
+  GOOGLE_CLIENT_ID: '',
+  GMAIL_ACCOUNT: 'chico.stay.property@gmail.com',
+  TO: ['ups.stroperations@gmail.com', 'clientcare.uptownparksuites@asia-affinity.com'],
+  SUBJECT: 'UPS T2; room {unit}; {checkin} - {checkout}',
+  BODY: [
+    'Hi UPS team!',
+    '',
+    "Please find attached the Guest Information Sheet for Room {unit}, Uptown Parksuites Tower 2, along with the guests' valid IDs and signed house rules.",
+    '',
+    'Guests:',
+    '{guest_list}',
+    '',
+    'Stay: {checkin} - {checkout}',
+    '',
+    'Thank you,',
+    '{owner_name}',
+    '{owner_mobile}',
+  ].join('\n'),
+  TOWER: 'Tower 2',
+  FORM_TITLE: 'Guest Information Sheet',
+  FORM_TEMPLATE: 'templates/uptown-guest-info.pdf',
+  MAX_GUESTS: 6,                       // 1 registered guest + 5 companion rows on the form
+  DEFAULT_OWNER_NAME: 'Joshua Natividad',
+  DEFAULT_OWNER_MOBILE: '09662775947',
+};
+
+const APP_VERSION = '1.2.0';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -927,6 +983,99 @@ function formatRange(a, b) {
   return `${MONTHS_SHORT[A.m - 1]} ${A.d} – ${MONTHS_SHORT[B.m - 1]} ${B.d}${yr}`;
 }
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+
+/* ---------- Guest email: template, MIME message, PDF form ---------- */
+/** "Nov 20, 2026" */
+function formatLongDate(iso) { const { y, m, d } = parseISO(iso); return `${MONTHS_SHORT[m - 1]} ${d}, ${y}`; }
+/** Replace {placeholders}; unknown ones are left as-is so typos are visible. */
+function fillTemplate(tpl, vars) { return tpl.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)); }
+function emailVars({ unit, checkIn, checkOut, guests, ownerName, ownerMobile }) {
+  const names = guests.map(g => g.trim()).filter(Boolean);
+  return {
+    unit, checkin: formatLongDate(checkIn), checkout: formatLongDate(checkOut),
+    guest: names[0] || '', guests: names.length,
+    guest_list: names.map((n, i) => `${i + 1}. ${n}`).join('\n'),
+    owner_name: ownerName, owner_mobile: ownerMobile,
+  };
+}
+function bytesToBase64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const utf8ToBase64 = str => bytesToBase64(new TextEncoder().encode(str));
+const wrap76 = b64 => b64.replace(/(.{76})/g, '$1\r\n');
+/** RFC 2047 header encoding when the text is not plain ASCII. */
+const encodeHeader = s => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${utf8ToBase64(s)}?=`);
+/** Keep attachment names simple and safe inside MIME headers. */
+const safeFilename = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w .()-]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 90) || 'file';
+/**
+ * Build a multipart/mixed email (RFC 5322) with a UTF-8 text body and
+ * base64 attachments: [{ filename, mime, base64 }]. Output is pure ASCII.
+ */
+function buildMime({ to, subject, body, attachments = [], boundary }) {
+  const NL = '\r\n';
+  const b = boundary || 'chico_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const out = [
+    `To: ${to.join(', ')}`,
+    `Subject: ${encodeHeader(subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${b}"`,
+    '',
+    `--${b}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrap76(utf8ToBase64(body.replace(/\r?\n/g, NL))),
+  ];
+  for (const a of attachments) {
+    const name = safeFilename(a.filename);
+    out.push(`--${b}`, `Content-Type: ${a.mime}; name="${name}"`, `Content-Disposition: attachment; filename="${name}"`,
+      'Content-Transfer-Encoding: base64', '', wrap76(a.base64));
+  }
+  out.push(`--${b}--`, '');
+  return out.join(NL);
+}
+/** Gmail API wants base64url without padding. */
+const base64UrlAscii = s => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/* Uptown Parksuites "Guest Information Sheet" – positions (PDF points,
+   origin bottom-left) copied from the airbnb-permit-generator app. */
+const GUEST_SHEET_FIELDS = {
+  registeredGuest: { x: 197, y: 855, size: 10 },
+  stayFrom: { x: 231, y: 738, size: 9 },
+  stayTo: { x: 313, y: 738, size: 9 },
+  tower: { x: 124, y: 305, size: 9 },
+  unit: { x: 229, y: 305, size: 9 },
+  ownerNameDate: { x: 210, y: 244, size: 9 },
+  signature: { x: 195, y: 256, w: 225, h: 26 },
+  companionRows: { x: 90, startY: 563, rowH: 19, max: 5, size: 9 },
+};
+/** Fill the Guest Information Sheet. Returns PDF bytes. */
+async function fillGuestSheet(PDFLib, templateBytes, d) {
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdf = await PDFDocument.load(templateBytes);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const page = pdf.getPages()[0];
+  const ink = rgb(0.05, 0.05, 0.15);
+  const f = GUEST_SHEET_FIELDS;
+  const draw = (text, p) => { if (text) page.drawText(String(text), { x: p.x, y: p.y, size: p.size, font, color: ink }); };
+  draw(d.registeredGuest, f.registeredGuest);
+  draw(d.stayFrom, f.stayFrom);
+  draw(d.stayTo, f.stayTo);
+  draw(d.tower, f.tower);
+  draw(d.unit, f.unit);
+  if (d.ownerName) draw(`${d.ownerName} / ${d.dateSigned}`, f.ownerNameDate);
+  const rows = f.companionRows;
+  (d.companions || []).slice(0, rows.max).forEach((name, i) => draw(name, { x: rows.x, y: rows.startY - i * rows.rowH, size: rows.size }));
+  if (d.signaturePng) {
+    const img = await pdf.embedPng(d.signaturePng);
+    const box = f.signature;
+    const k = Math.min(box.w / img.width, box.h / img.height);
+    page.drawImage(img, { x: box.x + (box.w - img.width * k) / 2, y: box.y + (box.h - img.height * k) / 2, width: img.width * k, height: img.height * k });
+  }
+  return pdf.save();
+}
 // ==LOGIC-END==
 
 /* =====================================================================
@@ -980,6 +1129,7 @@ const I = {
   right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
   down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.1"/></svg>',
@@ -1149,6 +1299,7 @@ let recoveryLink = false;
 async function boot() {
   // Read this before Supabase consumes the reset-password token from the URL.
   recoveryLink = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
+  captureGoogleRedirect();   // must run before Supabase looks at #access_token
   const cfg = getConfig();
   if (!cfg) return showSetup();
   if (looksLikeSecretKey(cfg.key)) {
@@ -1215,6 +1366,7 @@ async function doEnterApp(session) {
   $('#side-email').textContent = session.user?.email || '';
   subscribeRealtime();
   route();
+  resumeAfterGoogle();
 }
 
 function teardown() {
@@ -1502,6 +1654,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: I.home, href: '#/dashboard' },
   { id: 'units', label: 'My Units', icon: I.units, href: '#/units' },
   { id: 'bookings', label: 'Bookings', icon: I.list, href: '#/bookings' },
+  { id: 'email', label: 'Guest Email', icon: I.mail, href: '#/email' },
   { id: 'settings', label: 'Settings', icon: I.gear, href: '#/settings' },
 ];
 function parseRoute() {
@@ -1509,6 +1662,7 @@ function parseRoute() {
   if (!h.startsWith('#/')) return { name: 'dashboard' };
   const [name, id] = h.slice(2).split('/');
   if (name === 'unit' && id) return { name: 'unit', id: decodeURIComponent(id) };
+  if (name === 'email') return { name: 'email', id: id ? decodeURIComponent(id) : null };
   if (['dashboard', 'units', 'bookings', 'settings'].includes(name)) return { name };
   return { name: 'dashboard' };
 }
@@ -1525,7 +1679,13 @@ function route() {
   if (changed) window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
-function rerender() { if (!state.loaded || $('#app').hidden) return; renderPage(parseRoute(), false); }
+function rerender() {
+  if (!state.loaded || $('#app').hidden) return;
+  const r = parseRoute();
+  const a = document.activeElement;
+  if (r.name === 'email' && a && $('#main').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+  renderPage(r, false);
+}
 
 function renderNav(active) {
   const html = NAV.map(n => `<a href="${n.href}" class="${n.id === active ? 'active' : ''}" ${n.id === active ? 'aria-current="page"' : ''}>${n.icon}<span>${n.label}</span></a>`).join('');
@@ -1541,9 +1701,11 @@ function renderPage(r, animate) {
   else if (r.name === 'unit') html = viewUnit(r.id);
   else if (r.name === 'bookings') html = viewBookings();
   else if (r.name === 'settings') html = viewSettings();
+  else if (r.name === 'email') html = viewEmail(r.id);
   main.innerHTML = `<div class="${animate ? 'page-enter' : ''}">${html}</div>`;
   $$('.sync', main).forEach(updateSyncEl);
   if (r.name === 'bookings') bindBookingFilters();
+  if (r.name === 'email') bindEmailPage();
 }
 
 /* =====================================================================
@@ -1929,6 +2091,13 @@ function viewSettings() {
       <button class="srow accent" data-action="add-unit"><div class="sl"><b>Add a unit</b></div><div class="sr">${I.plus}</div></button>
     </div></div>
 
+    <div class="settings-group"><h3>Guest email</h3><div class="list">
+      <button class="srow" data-action="edit-owner"><div class="sl"><b>Your name &amp; mobile</b><small>${esc(loadOwner().name)} · ${esc(loadOwner().mobile)}</small></div><div class="sr">${I.right}</div></button>
+      <button class="srow" data-action="edit-signature"><div class="sl"><b>Signature</b><small>${loadOwner().signature ? 'Saved on this device' : 'Not set yet – needed for the Guest Information Sheet'}</small></div><div class="sr">${loadOwner().signature ? `<img class="sig-preview" src="${loadOwner().signature}" alt="">` : ''}${I.right}</div></button>
+      <div class="srow"><div class="sl"><b>Gmail</b><small>${!EMAIL_CONFIG.GOOGLE_CLIENT_ID ? 'Not set up yet (Google Client ID missing)' : gmailToken() ? `Connected · ${esc(EMAIL_CONFIG.GMAIL_ACCOUNT)}` : `Not connected – you'll sign in when you create a draft`}</small></div></div>
+      ${gmailToken() ? '<button class="srow danger" data-action="gmail-disconnect"><div class="sl"><b>Disconnect Gmail</b></div></button>' : ''}
+    </div></div>
+
     <div class="settings-group"><h3>Data &amp; sync</h3><div class="list">
       <button class="srow" data-action="refresh"><div class="sl"><b>Sync now</b><small id="last-sync">${state.lastSync ? 'Last synced ' + esc(state.lastSync.toLocaleString()) : 'Not synced yet'}</small></div><div class="sr">${I.right}</div></button>
       <button class="srow" data-action="export-csv"><div class="sl"><b>Export bookings (CSV)</b><small>Opens in Excel, Numbers or Google Sheets</small></div><div class="sr">${I.right}</div></button>
@@ -1971,7 +2140,8 @@ function openBookingDetail(id) {
         <div class="srow"><div class="sl"><b>Total amount</b></div><div class="sr num" style="color:var(--text);font-weight:650">${formatPHP(b.amount)}</div></div>
         <div class="srow"><div class="sl"><b>Per night</b></div><div class="sr num">${formatPHP(perNight)}</div></div>
       </div>
-      ${b.notes ? `<div class="field-label">Notes</div><div class="notes-box">${esc(b.notes)}</div>` : ''}`,
+      ${b.notes ? `<div class="field-label">Notes</div><div class="notes-box">${esc(b.notes)}</div>` : ''}
+      <a class="btn secondary block" style="margin-top:16px" href="#/email/${encodeURIComponent(b.id)}">${I.mail.replace('<svg', '<svg width="18" height="18"')}Prepare guest email</a>`,
     foot: `<button type="button" class="btn danger" data-action="delete-booking" data-id="${b.id}">Delete</button>
            <button type="button" class="btn" data-action="edit-booking" data-id="${b.id}">Edit</button>`,
   });
@@ -2272,6 +2442,448 @@ function openUnitForm(id = null) {
   });
 }
 
+/* =====================================================================
+   GUEST EMAIL – fill the Guest Information Sheet, attach IDs + signed
+   house rules, and create a ready-to-send Gmail draft.
+   ID photos stay on the device and in the email only – never in Supabase.
+   ===================================================================== */
+const OWNER_KEY = 'chico.owner';
+/** Owner name, mobile and signature (per device). Falls back to what the
+    airbnb-permit-generator app saved on this same website, if anything. */
+function loadOwner() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(OWNER_KEY) || '{}'); } catch { /* ignore */ }
+  let legacy = {};
+  try { legacy = JSON.parse(localStorage.getItem('airbnb-permit-generator:defaults') || '{}'); } catch { /* ignore */ }
+  return {
+    name: o.name || legacy.ownerName || EMAIL_CONFIG.DEFAULT_OWNER_NAME,
+    mobile: o.mobile || legacy.ownerMobile || EMAIL_CONFIG.DEFAULT_OWNER_MOBILE,
+    signature: o.signature || legacy.signaturePngDataUrl || '',
+  };
+}
+function saveOwner(patch) {
+  try { localStorage.setItem(OWNER_KEY, JSON.stringify({ ...loadOwner(), ...patch })); return true; }
+  catch { toast('This browser blocked saving. Try again outside private mode.', 'error'); return false; }
+}
+
+/* ---------- page state (kept outside the DOM so re-renders keep it) ---------- */
+let emailState = null;
+function blankEmailState() {
+  const today = todayISO();
+  return { bookingId: null, unitId: state.units[0]?.id || '', checkIn: today, checkOut: addDays(today, 1), guests: [''], ids: [], rules: [] };
+}
+function resetEmailState() {
+  if (emailState) [...emailState.ids, ...emailState.rules].forEach(p => URL.revokeObjectURL(p.url));
+  emailState = blankEmailState();
+}
+function emailStateFromBooking(b) {
+  const n = Math.min(Math.max(1, b.guest_count || 1), EMAIL_CONFIG.MAX_GUESTS);
+  return { bookingId: b.id, unitId: b.unit_id, checkIn: b.check_in, checkOut: b.check_out, guests: [b.guest_name, ...Array(n - 1).fill('')], ids: [], rules: [] };
+}
+function ensureEmailState(bookingId) {
+  if (bookingId && (!emailState || emailState.bookingId !== bookingId)) {
+    const b = state.bookings.find(x => x.id === bookingId);
+    if (b) { resetEmailState(); emailState = emailStateFromBooking(b); }
+  }
+  if (!emailState) emailState = blankEmailState();
+  return emailState;
+}
+/** Copy what is typed on screen into emailState. */
+function syncEmailFields() {
+  if (!emailState || !$('#em-unit')) return;
+  emailState.unitId = $('#em-unit').value;
+  emailState.checkIn = $('#em-in').value;
+  emailState.checkOut = $('#em-out').value;
+  emailState.guests = $$('.guest-row .input').map(i => i.value);
+}
+function rerenderEmail() { if (parseRoute().name === 'email') { renderPage(parseRoute(), false); } }
+
+function currentEmail() {
+  const st = emailState, owner = loadOwner();
+  const unit = unitShort(unitById(st.unitId));
+  const ok = isValidISO(st.checkIn) && isValidISO(st.checkOut);
+  const vars = ok ? emailVars({ unit, checkIn: st.checkIn, checkOut: st.checkOut, guests: st.guests, ownerName: owner.name, ownerMobile: owner.mobile }) : null;
+  return { unit, owner, vars, subject: vars ? fillTemplate(EMAIL_CONFIG.SUBJECT, vars) : '', body: vars ? fillTemplate(EMAIL_CONFIG.BODY, vars) : '' };
+}
+
+function viewEmail(bookingId) {
+  const st = ensureEmailState(bookingId);
+  const today = todayISO();
+  const recent = state.bookings.filter(b => b.check_out >= addDays(today, -30)).slice(0, 60);
+  const { owner, subject, body } = currentEmail();
+  const named = st.guests.filter(g => g.trim()).length;
+  const thumbs = kind => st[kind].map((p, i) => `<div class="thumb"><img src="${p.url}" alt="${kind === 'ids' ? 'Guest ID' : 'House rules'} ${i + 1}"><button type="button" data-action="email-remove-photo" data-kind="${kind}" data-i="${i}" aria-label="Remove photo">×</button></div>`).join('');
+  const gmailReady = !!EMAIL_CONFIG.GOOGLE_CLIENT_ID;
+  return `
+    <div class="page-head">
+      <div class="titles"><div class="eyebrow">Uptown Parksuites · Tower 2</div><h1>Guest Email</h1></div>
+      <div class="actions"><button class="link-btn" data-action="email-reset">Start over</button></div>
+    </div>
+    ${gmailReady ? '' : `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>Gmail isn't connected to the app yet, so drafts can't be created. You can still fill in and preview the form. (Setup: add the Google Client ID – see README.)</span></div>`}
+
+    <div class="card card-pad email-step">
+      <div class="field"><label for="em-booking">Booking</label>
+        <select class="input" id="em-booking">
+          <option value="">Enter details manually</option>
+          ${recent.map(b => `<option value="${b.id}" ${b.id === st.bookingId ? 'selected' : ''}>${esc(b.guest_name)} · ${esc(unitShort(unitById(b.unit_id)))} · ${esc(formatRange(b.check_in, b.check_out))}</option>`).join('')}
+        </select></div>
+      <div class="field"><label for="em-unit">Unit</label><select class="input" id="em-unit">${unitOptions(st.unitId)}</select></div>
+      <div class="field-row" style="margin-bottom:0">
+        <div class="field" style="margin-bottom:0"><label for="em-in">Check-in</label><input class="input" id="em-in" type="date" value="${st.checkIn}"></div>
+        <div class="field" style="margin-bottom:0"><label for="em-out">Check-out</label><input class="input" id="em-out" type="date" value="${st.checkOut}"></div>
+      </div>
+    </div>
+
+    <div class="card card-pad email-step">
+      <div class="field-label">Guests <span style="font-weight:400">(first = registered guest, max ${EMAIL_CONFIG.MAX_GUESTS})</span></div>
+      ${st.guests.map((g, i) => `<div class="guest-row">
+          <input class="input" type="text" value="${esc(g)}" placeholder="${i === 0 ? 'Registered guest full name' : `Companion ${i}`}" autocapitalize="words" autocomplete="off" enterkeyhint="next" aria-label="${i === 0 ? 'Registered guest' : `Companion ${i}`}" maxlength="80">
+          ${st.guests.length > 1 ? `<button type="button" class="icon-btn" data-action="email-remove-guest" data-i="${i}" aria-label="Remove guest">✕</button>` : ''}
+        </div>`).join('')}
+      ${st.guests.length < EMAIL_CONFIG.MAX_GUESTS ? `<button type="button" class="link-btn" data-action="email-add-guest">${I.plus.replace('<svg', '<svg width="16" height="16"')} Add guest</button>` : ''}
+    </div>
+
+    <div class="card card-pad email-step">
+      <div class="field-label">Guest IDs <span style="font-weight:400">(${st.ids.length} of ${named || 1})</span></div>
+      ${st.ids.length ? `<div class="thumbs">${thumbs('ids')}</div>` : ''}
+      <label class="btn secondary block file-btn">${I.plus.replace('<svg', '<svg width="18" height="18"')}Add ID photos<input type="file" id="em-ids" accept="image/*" multiple></label>
+      <div class="field-label" style="margin-top:18px">Signed house rules <span style="font-weight:400">(${st.rules.length})</span></div>
+      ${st.rules.length ? `<div class="thumbs">${thumbs('rules')}</div>` : ''}
+      <label class="btn secondary block file-btn">${I.plus.replace('<svg', '<svg width="18" height="18"')}Add house rules photo<input type="file" id="em-rules" accept="image/*" multiple></label>
+      <p class="field-hint">Photos are only attached to the email – they are not saved in the app.</p>
+    </div>
+
+    <div class="card card-pad email-step">
+      <div class="field-label">Owner signature</div>
+      <div style="display:flex;align-items:center;gap:12px;justify-content:space-between">
+        <div style="min-width:0">${owner.signature ? `<img class="sig-preview" src="${owner.signature}" alt="Your signature">` : '<span class="small" style="color:var(--danger)">Not set yet</span>'}
+          <div class="small muted" style="margin-top:4px">${esc(owner.name)} · ${esc(owner.mobile)}</div></div>
+        <button type="button" class="btn plain sm" data-action="edit-signature">${owner.signature ? 'Change' : 'Add signature'}</button>
+      </div>
+    </div>
+
+    <div class="email-step">
+      <div class="field-label">Email preview</div>
+      <div class="mail-preview">
+        <div class="mh">From <b>${esc(EMAIL_CONFIG.GMAIL_ACCOUNT)}</b></div>
+        <div class="mh">To <b>${esc(EMAIL_CONFIG.TO.join(', '))}</b></div>
+        <div class="mh">Subject <b>${esc(subject || '—')}</b></div>
+        <div class="mh">Attachments <b>${EMAIL_CONFIG.FORM_TITLE} (PDF) + ${plural(st.ids.length, 'ID photo')} + ${plural(st.rules.length, 'house rules photo')}</b></div>
+        <pre>${esc(body)}</pre>
+      </div>
+    </div>
+
+    <div class="email-actions">
+      <button type="button" class="btn plain" data-action="email-preview-form">Preview</button>
+      <button type="button" class="btn" data-action="email-create-draft" ${gmailReady ? '' : 'disabled'}>${I.mail.replace('<svg', '<svg width="18" height="18"')}Create Gmail draft</button>
+    </div>
+    <div class="progress-note" id="em-progress" aria-live="polite">${gmailReady ? (gmailToken() ? `Gmail connected · ${esc(EMAIL_CONFIG.GMAIL_ACCOUNT)}` : 'You will be asked to sign in to Gmail the first time.') : ''}</div>`;
+}
+
+function bindEmailPage() {
+  $('#em-booking').addEventListener('change', e => {
+    const id = e.target.value;
+    if (id) location.hash = '#/email/' + encodeURIComponent(id);
+    else { resetEmailState(); location.hash = '#/email'; rerenderEmail(); }
+  });
+  // Keep the preview in sync without re-rendering (so the keyboard stays open).
+  const refreshPreview = () => {
+    syncEmailFields();
+    const { subject, body } = currentEmail();
+    const pre = $('.mail-preview pre'); if (pre) pre.textContent = body;
+    const subj = $$('.mail-preview .mh b')[2]; if (subj) subj.textContent = subject || '—';
+  };
+  ['#em-unit', '#em-in', '#em-out'].forEach(sel => $(sel).addEventListener('change', () => {
+    if (sel === '#em-in' && isValidISO($('#em-in').value) && $('#em-out').value <= $('#em-in').value) $('#em-out').value = addDays($('#em-in').value, 1);
+    refreshPreview();
+  }));
+  $$('.guest-row .input').forEach(inp => inp.addEventListener('input', refreshPreview));
+  const addPhotos = kind => async e => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (!files.length) return;
+    syncEmailFields();
+    const note = $('#em-progress'); if (note) note.textContent = 'Preparing photos…';
+    for (const f of files) {
+      try { const blob = await compressImage(f); emailState[kind].push({ blob, url: URL.createObjectURL(blob) }); }
+      catch (err) { toast(err.message || 'Could not read that photo.', 'error'); }
+    }
+    rerenderEmail();
+  };
+  $('#em-ids').addEventListener('change', addPhotos('ids'));
+  $('#em-rules').addEventListener('change', addPhotos('rules'));
+}
+
+/** Shrink a phone photo to max 1600px JPEG – small enough for email, sharp enough to read an ID. */
+function compressImage(file, maxSide = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b => (b ? resolve(b) : reject(new Error('Could not process that photo.'))), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`Could not read “${file.name}”. Try a JPEG or PNG photo.`)); };
+    img.src = url;
+  });
+}
+
+/* ---------- PDF ---------- */
+let pdfLibPromise = null;
+function loadPdfLib() {
+  if (window.PDFLib) return Promise.resolve(window.PDFLib);
+  if (!pdfLibPromise) {
+    pdfLibPromise = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+      sc.integrity = 'sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI';
+      sc.crossOrigin = 'anonymous';
+      sc.onload = () => resolve(window.PDFLib);
+      sc.onerror = () => { pdfLibPromise = null; reject(new Error('Could not load the PDF tool. Check your connection.')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return pdfLibPromise;
+}
+/** Validate the page; returns an error message or null. */
+function emailProblem({ forDraft }) {
+  const st = emailState;
+  if (!st.unitId) return 'Choose a unit.';
+  if (!isValidISO(st.checkIn) || !isValidISO(st.checkOut)) return 'Choose the check-in and check-out dates.';
+  if (st.checkOut <= st.checkIn) return 'Check-out must be after check-in.';
+  if (!st.guests[0] || !st.guests[0].trim()) return 'Enter the registered guest’s name.';
+  if (!loadOwner().signature) return 'Add your signature first (needed on the Guest Information Sheet).';
+  if (forDraft && !st.ids.length) return 'Add at least one guest ID photo.';
+  if (forDraft && !st.rules.length) return 'Add a photo of the signed house rules.';
+  return null;
+}
+async function buildGuestSheetPdf() {
+  const st = emailState, owner = loadOwner();
+  const [PDFLib, tpl, sig] = await Promise.all([
+    loadPdfLib(),
+    fetch(EMAIL_CONFIG.FORM_TEMPLATE).then(r => { if (!r.ok) throw new Error('Could not load the form template.'); return r.arrayBuffer(); }),
+    fetch(owner.signature).then(r => r.arrayBuffer()),
+  ]);
+  const names = st.guests.map(g => g.trim()).filter(Boolean);
+  return fillGuestSheet(PDFLib, tpl, {
+    registeredGuest: names[0], companions: names.slice(1),
+    stayFrom: formatLongDate(st.checkIn), stayTo: formatLongDate(st.checkOut),
+    tower: EMAIL_CONFIG.TOWER, unit: unitShort(unitById(st.unitId)),
+    ownerName: owner.name, dateSigned: formatLongDate(todayISO()),
+    signaturePng: new Uint8Array(sig),
+  });
+}
+async function previewGuestSheet(btn) {
+  syncEmailFields();
+  const problem = emailProblem({ forDraft: false });
+  if (problem) { toast(problem, 'error'); if (/signature/.test(problem)) openSignatureSheet(); return; }
+  // Open the tab right away (inside the tap) so iPhone pop-up blocking doesn't stop it.
+  const win = window.open('', '_blank');
+  setBusy(btn, true);
+  try {
+    const bytes = await buildGuestSheetPdf();
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    if (win) win.location.href = url; else location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { if (win) win.close(); toast(err.message || 'Could not create the form.', 'error'); }
+  finally { setBusy(btn, false); }
+}
+
+/* ---------- Gmail (OAuth implicit flow + Gmail API drafts) ---------- */
+const GTOKEN_KEY = 'chico.gmail.token', GOAUTH_KEY = 'chico.gmail.oauth', GSTASH_KEY = 'pending-email';
+let pendingGoogle = null;   // { resume, error } set when we come back from Google
+function gmailToken() {
+  try { const t = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60000) return t.token; } catch { /* ignore */ }
+  return null;
+}
+function oauthRedirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
+/** Called at startup: picks up the token Google put in the URL and cleans the URL. */
+function captureGoogleRedirect() {
+  const h = location.hash;
+  if (!/[#&](access_token|error)=/.test(h) || !/state=chico_g_/.test(h)) return;
+  const p = new URLSearchParams(h.slice(1));
+  let saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem(GOAUTH_KEY) || 'null'); } catch { /* ignore */ }
+  sessionStorage.removeItem(GOAUTH_KEY);
+  if (saved && saved.state === p.get('state')) {
+    if (p.get('access_token')) {
+      try { sessionStorage.setItem(GTOKEN_KEY, JSON.stringify({ token: p.get('access_token'), exp: Date.now() + Number(p.get('expires_in') || 3600) * 1000 })); } catch { /* ignore */ }
+      pendingGoogle = { resume: !!saved.resume };
+    } else pendingGoogle = { error: p.get('error') || 'unknown' };
+  }
+  history.replaceState(null, '', location.pathname + location.search + (saved?.route || '#/email'));
+}
+async function connectGmail({ resume }) {
+  const st = 'chico_g_' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+  try { sessionStorage.setItem(GOAUTH_KEY, JSON.stringify({ state: st, route: location.hash || '#/email', resume })); } catch { /* ignore */ }
+  const q = new URLSearchParams({
+    client_id: EMAIL_CONFIG.GOOGLE_CLIENT_ID, redirect_uri: oauthRedirectUri(), response_type: 'token',
+    scope: 'https://www.googleapis.com/auth/gmail.compose', include_granted_scopes: 'true',
+    login_hint: EMAIL_CONFIG.GMAIL_ACCOUNT, state: st,
+  });
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
+}
+async function gmailDisconnect() {
+  const t = gmailToken();
+  sessionStorage.removeItem(GTOKEN_KEY);
+  if (t) fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(t), { method: 'POST' }).catch(() => {});
+  toast('Gmail disconnected'); rerender();
+}
+
+/* A tiny IndexedDB store keeps the form + photos safe while we hop to Google sign-in and back. */
+function idbOpen() { return new Promise((res, rej) => { const r = indexedDB.open('chico', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function idbDo(mode, fn) { const db = await idbOpen(); return new Promise((res, rej) => { const tx = db.transaction('kv', mode); const req = fn(tx.objectStore('kv')); tx.oncomplete = () => res(req?.result); tx.onerror = () => rej(tx.error); }); }
+const stashEmail = () => idbDo('readwrite', s => s.put({ ...emailState, ids: emailState.ids.map(p => p.blob), rules: emailState.rules.map(p => p.blob) }, GSTASH_KEY));
+const takeStash = async () => { const v = await idbDo('readonly', s => s.get(GSTASH_KEY)); await idbDo('readwrite', s => s.delete(GSTASH_KEY)); return v; };
+
+async function resumeAfterGoogle() {
+  if (!pendingGoogle) return;
+  const p = pendingGoogle; pendingGoogle = null;
+  let stash = null;
+  try { stash = await takeStash(); } catch { /* storage unavailable */ }
+  if (stash) {
+    resetEmailState();
+    emailState = { ...stash, ids: (stash.ids || []).map(b => ({ blob: b, url: URL.createObjectURL(b) })), rules: (stash.rules || []).map(b => ({ blob: b, url: URL.createObjectURL(b) })) };
+    if (parseRoute().name !== 'email') location.hash = '#/email'; else rerenderEmail();
+  }
+  if (p.error) { toast(p.error === 'access_denied' ? 'Gmail access was not allowed.' : 'Gmail sign-in failed – please try again.', 'error'); return; }
+  toast('Gmail connected');
+  if (p.resume && stash) setTimeout(() => createGmailDraft($('[data-action="email-create-draft"]')), 300);
+}
+
+const blobToBase64 = async blob => bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+async function createGmailDraft(btn) {
+  if (!emailState) return;
+  syncEmailFields();
+  const problem = emailProblem({ forDraft: true });
+  if (problem) { toast(problem, 'error'); if (/signature/.test(problem)) openSignatureSheet(); return; }
+  const names = emailState.guests.map(g => g.trim()).filter(Boolean);
+  if (emailState.ids.length < names.length) {
+    const go = await confirmDialog({ title: 'Fewer IDs than guests', message: `${plural(names.length, 'guest')} but ${plural(emailState.ids.length, 'ID photo')}. Create the draft anyway?`, confirmText: 'Continue' });
+    if (!go) return;
+  }
+  const token = gmailToken();
+  if (!token) {
+    try { await stashEmail(); } catch { toast('Could not save the form before signing in – you may need to re-add photos.', 'error'); }
+    return connectGmail({ resume: true });
+  }
+  const note = $('#em-progress');
+  const say = t => { if (note) note.textContent = t; };
+  setBusy(btn, true, 'Working…');
+  try {
+    say('Filling in the Guest Information Sheet…');
+    const pdf = await buildGuestSheetPdf();
+    const { unit, subject, body } = currentEmail();
+    const stamp = emailState.checkIn;
+    say('Attaching photos…');
+    const attachments = [{ filename: `${EMAIL_CONFIG.FORM_TITLE} - ${unit} - ${stamp}.pdf`, mime: 'application/pdf', base64: bytesToBase64(pdf) }];
+    for (const [i, p] of emailState.ids.entries()) attachments.push({ filename: `Guest ID ${i + 1}${names[i] ? ' - ' + names[i] : ''}.jpg`, mime: 'image/jpeg', base64: await blobToBase64(p.blob) });
+    for (const [i, p] of emailState.rules.entries()) attachments.push({ filename: `Signed House Rules${emailState.rules.length > 1 ? ' ' + (i + 1) : ''} - ${unit}.jpg`, mime: 'image/jpeg', base64: await blobToBase64(p.blob) });
+    const mime = buildMime({ to: EMAIL_CONFIG.TO, subject, body, attachments });
+    say('Creating the Gmail draft…');
+    // Small messages: JSON endpoint. Large ones (>4.5 MB): media upload endpoint (up to 35 MB).
+    const res = mime.length < 4.5e6
+      ? await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { raw: base64UrlAscii(mime) } }) })
+      : await fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts?uploadType=media', { method: 'POST', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'message/rfc822' }, body: mime });
+    if (res.status === 401) {
+      sessionStorage.removeItem(GTOKEN_KEY);
+      await stashEmail();
+      return connectGmail({ resume: true });
+    }
+    if (!res.ok) {
+      let msg = `Gmail error ${res.status}`;
+      try { const j = await res.json(); if (j.error?.message) msg += ': ' + j.error.message; } catch { /* ignore */ }
+      throw new Error(msg);
+    }
+    const draft = await res.json();
+    say('');
+    showDraftReady(draft, subject, attachments.length);
+  } catch (err) {
+    say('');
+    toast(friendlyError(err), 'error');
+  } finally { setBusy(btn, false); }
+}
+function showDraftReady(draft, subject, count) {
+  const msgId = draft?.message?.id || '';
+  const web = `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(EMAIL_CONFIG.GMAIL_ACCOUNT)}#drafts${msgId ? '?compose=' + msgId : ''}`;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  openSheet({
+    title: 'Draft ready',
+    body: `
+      <div class="detail-hero"><span class="pill p-direct">${I.check.replace('<svg', '<svg width="14" height="14"')}Saved to Gmail Drafts</span>
+        <div class="guest" style="font-size:19px">${esc(subject)}</div>
+        <div class="unit">${plural(count, 'attachment')} · ${esc(EMAIL_CONFIG.GMAIL_ACCOUNT)}</div></div>
+      <p class="small muted" style="text-align:center">Open Gmail, go to <b>Drafts</b> (it's at the top), check it and tap <b>Send</b>.</p>
+      ${ios ? `<p style="text-align:center;margin-top:10px"><a class="link-btn" href="${web}" target="_blank" rel="noopener">Open in Gmail website instead</a></p>` : ''}`,
+    foot: `<button type="button" class="btn plain" data-action="close-sheet">Done</button>
+           <a class="btn" href="${ios ? 'googlegmail://' : web}" ${ios ? '' : 'target="_blank" rel="noopener"'}>${I.mail.replace('<svg', '<svg width="18" height="18"')}Open Gmail</a>`,
+  });
+}
+
+/* ---------- owner name / mobile / signature sheets ---------- */
+function openOwnerSheet() {
+  const o = loadOwner();
+  openSheet({
+    title: 'Your details', form: true,
+    left: '<button type="button" class="link-btn" data-action="close-sheet">Cancel</button>',
+    body: `<div class="field"><label for="ow-name">Name (printed under your signature)</label><input class="input" id="ow-name" name="name" value="${esc(o.name)}" autocomplete="name" maxlength="80"></div>
+           <div class="field"><label for="ow-mobile">Mobile (end of the email)</label><input class="input" id="ow-mobile" name="mobile" value="${esc(o.mobile)}" type="tel" inputmode="tel" autocomplete="tel" maxlength="30"></div>`,
+    foot: '<button type="submit" class="btn">Save</button>',
+    onMount: w => $('form.sheet', w).addEventListener('submit', e => {
+      e.preventDefault();
+      const name = e.target.name.value.trim(), mobile = e.target.mobile.value.trim();
+      if (!name) { toast('Enter your name.', 'error'); return; }
+      if (saveOwner({ name, mobile })) { closeSheet(); toast('Saved'); rerender(); }
+    }),
+  });
+}
+function openSignatureSheet() {
+  openSheet({
+    title: 'Your signature',
+    body: `<p class="small muted" style="margin-bottom:10px">Sign with your finger in the box. It's printed on the Guest Information Sheet and saved on this device.</p>
+      <canvas class="sig-pad" id="sig-pad" aria-label="Signature pad"></canvas>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button type="button" class="btn plain sm" id="sig-clear">Clear</button>
+        <label class="btn plain sm file-btn">Upload image<input type="file" id="sig-upload" accept="image/*"></label>
+      </div>`,
+    foot: '<button type="button" class="btn" id="sig-save">Save signature</button>',
+    onMount: w => {
+      const c = $('#sig-pad', w), ctx = c.getContext('2d');
+      let drawn = false, last = null;
+      const setup = () => {
+        const dpr = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+        c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0d0d26'; ctx.lineWidth = 2.6 * dpr;
+        const existing = loadOwner().signature;
+        if (existing) drawImageFit(existing).then(() => { drawn = true; });
+      };
+      const drawImageFit = src => new Promise(res => { const img = new Image(); img.onload = () => {
+        ctx.clearRect(0, 0, c.width, c.height);
+        const k = Math.min(c.width * 0.92 / img.width, c.height * 0.85 / img.height);
+        ctx.drawImage(img, (c.width - img.width * k) / 2, (c.height - img.height * k) / 2, img.width * k, img.height * k); res();
+      }; img.onerror = res; img.src = src; });
+      const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+      c.addEventListener('pointerdown', e => { c.setPointerCapture(e.pointerId); last = pos(e); ctx.beginPath(); ctx.arc(last[0], last[1], ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fillStyle = '#0d0d26'; ctx.fill(); drawn = true; });
+      c.addEventListener('pointermove', e => { if (!last) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(...last); ctx.lineTo(...p); ctx.stroke(); last = p; });
+      const end = () => { last = null; };
+      c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+      $('#sig-clear', w).addEventListener('click', () => { ctx.clearRect(0, 0, c.width, c.height); drawn = false; });
+      $('#sig-upload', w).addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const u = URL.createObjectURL(f); drawImageFit(u).then(() => { drawn = true; URL.revokeObjectURL(u); }); });
+      $('#sig-save', w).addEventListener('click', () => {
+        if (!drawn) { toast('Sign in the box first.', 'error'); return; }
+        if (saveOwner({ signature: c.toDataURL('image/png') })) { closeSheet(); toast('Signature saved'); rerender(); }
+      });
+      setTimeout(setup, 60);
+    },
+  });
+}
+
 /* ---------- CSV export ---------- */
 function exportCSV() {
   const cell = v => {
@@ -2347,6 +2959,15 @@ const actions = {
   'edit-unit': el => openUnitForm(el.dataset.id),
   'refresh': async () => { const ok = await loadAll(); if (ok) toast('Everything is up to date'); },
   'export-csv': () => exportCSV(),
+  'edit-owner': () => openOwnerSheet(),
+  'edit-signature': () => openSignatureSheet(),
+  'gmail-disconnect': () => gmailDisconnect(),
+  'email-add-guest': () => { syncEmailFields(); if (emailState.guests.length < EMAIL_CONFIG.MAX_GUESTS) { emailState.guests.push(''); rerenderEmail(); $$('.guest-row .input').pop()?.focus(); } },
+  'email-remove-guest': el => { syncEmailFields(); emailState.guests.splice(Number(el.dataset.i), 1); if (!emailState.guests.length) emailState.guests.push(''); rerenderEmail(); },
+  'email-remove-photo': el => { syncEmailFields(); const list = emailState[el.dataset.kind]; const [p] = list.splice(Number(el.dataset.i), 1); if (p) URL.revokeObjectURL(p.url); rerenderEmail(); },
+  'email-preview-form': el => previewGuestSheet(el),
+  'email-create-draft': el => createGmailDraft(el),
+  'email-reset': () => { resetEmailState(); location.hash = '#/email'; rerenderEmail(); },
   'reset-config': async () => {
     const ok = await confirmDialog({ title: 'Change Supabase connection?', message: 'You will be signed out on this device.', confirmText: 'Continue', destructive: true });
     if (!ok) return;

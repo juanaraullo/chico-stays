@@ -141,6 +141,46 @@ appear on the others automatically, usually within a second.
 
 ---
 
+## Guest Email: one-time Gmail setup (about 15 minutes)
+
+The **Guest Email** tab creates a complete Gmail draft for the building admin.
+The draft has the filled-in Guest Information Sheet, the guests' IDs and the
+signed house rules attached. To be allowed to create drafts in
+`chico.stay.property@gmail.com`, the app needs a free Google "Client ID".
+
+1. Go to **https://console.cloud.google.com** and sign in as **chico.stay.property@gmail.com**.
+   Accept the terms if asked.
+2. At the top, open the project picker → **New project**.
+   Name it `Chico Stays` → **Create**, then make sure it's selected.
+3. Search the top bar for **Gmail API**, open it and click **Enable**.
+4. Search for **Google Auth Platform** (or *OAuth consent screen*) → **Get started**:
+   - **App name:** `Chico Stays`. **User support email:** your Gmail address.
+   - **Audience:** **External**.
+   - **Contact email:** your Gmail address. Agree to the policy, then click **Create**.
+5. In **Google Auth Platform → Audience**, under **Test users**, click **Add users**,
+   add `chico.stay.property@gmail.com` and **Save**.
+6. In **Google Auth Platform → Clients**, click **Create client**:
+   - **Application type:** **Web application**. **Name:** `Chico Stays web`.
+   - **Authorized JavaScript origins:** `https://juanaraullo.github.io`
+   - **Authorized redirect URIs:** `https://juanaraullo.github.io/chico-stays/`
+     (include the final `/`).
+   - Click **Create** and copy the **Client ID**. It ends with `.apps.googleusercontent.com`.
+7. Put the Client ID in `index.html` → `EMAIL_CONFIG.GOOGLE_CLIENT_ID`, or send it to
+   Claude to add. It's public and safe to share. Never share the *Client secret*;
+   the app doesn't need it.
+
+**The first time you create a draft**, Google shows *"Google hasn't verified this app"*.
+That's expected because it's your own private app. Tap **Continue**, then allow
+**"Manage drafts and send emails"**. Sign-in lasts about an hour; after that the app
+asks again with one tap.
+
+**Using it:** open a booking → **Prepare guest email**, or use the **Guest Email** tab.
+1. Check the guest names, then add the ID photos and the signed house rules photo.
+2. Tap **Create Gmail draft**, then **Open Gmail**. The draft is at the top of **Drafts**.
+   Check it and tap **Send**.
+
+Your signature (Settings → Signature) is saved on each device. Draw it once per phone or computer.
+
 ## Using the app
 
 - **Dashboard**: combined totals for the selected year, each unit with a mini

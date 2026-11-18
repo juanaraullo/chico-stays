@@ -7,11 +7,12 @@ const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const code = html.split('// ==LOGIC-START==')[1].split('// ==LOGIC-END==')[0];
-const ctx = {};
+const ctx = { TextEncoder, btoa, atob };
 vm.createContext(ctx);
 vm.runInContext(code + `;Object.assign(globalThis, { toISO, parseISO, isValidISO, addDays, diffDays, daysInMonth, weekday, todayISO,
   shiftMonth, nightsBetween, rangesOverlap, overlapNights, blockRange, findConflict, buildDayMap, periodStats, yearStats,
-  monthStats, ytdGross, validateBooking, validateBlock, parseAmount, formatPHP, formatPct, formatRange });`, ctx);
+  monthStats, ytdGross, validateBooking, validateBlock, parseAmount, formatPHP, formatPct, formatRange,
+  formatLongDate, fillTemplate, emailVars, buildMime, base64UrlAscii, safeFilename });`, ctx);
 const L = ctx;
 
 let pass = 0, fail = 0;
@@ -125,6 +126,22 @@ eq(L.formatPHP(7500.5), '₱7,500.50', 'format decimals');
 eq(L.formatPHP('4000.00'), '₱4,000', 'format numeric string');
 eq(L.formatPct(9 / 28), '32%', 'percent');
 eq(L.formatRange('2026-12-30', '2027-01-03'), 'Dec 30, 2026 – Jan 3, 2027', 'range across years');
+
+// ---- guest email ----
+eq(L.formatLongDate('2026-11-20'), 'Nov 20, 2026', 'long date');
+const ev = L.emailVars({ unit: '24J', checkIn: '2026-11-24', checkOut: '2026-12-02', guests: ['Sophie Tan', ' Ben Tan ', ''], ownerName: 'Joshua Natividad', ownerMobile: '09662775947' });
+eq(L.fillTemplate('UPS T2; room {unit}; {checkin} - {checkout}', ev), 'UPS T2; room 24J; Nov 24, 2026 - Dec 2, 2026', 'subject template');
+eq(ev.guest_list, '1. Sophie Tan\n2. Ben Tan', 'numbered guest list skips blanks');
+eq(L.fillTemplate('{guest} x{guests} {typo}', ev), 'Sophie Tan x2 {typo}', 'unknown placeholders left visible');
+eq(L.safeFilename('Guest ID 1 - María "x".jpg'), 'Guest ID 1 - Maria x.jpg', 'safe filename keeps letters');
+const mime = L.buildMime({ to: ['a@x.com', 'b@y.com'], subject: 'Hi ñ', body: 'Line 1\nLíne 2', attachments: [{ filename: 'f.pdf', mime: 'application/pdf', base64: 'JVBERi0x' }], boundary: 'B' });
+eq(/^[\x00-\x7f]*$/.test(mime), true, 'MIME is pure ASCII');
+eq(mime.split('\r\n')[0], 'To: a@x.com, b@y.com', 'MIME To header');
+eq(mime.includes('Subject: =?UTF-8?B?'), true, 'non-ASCII subject encoded');
+const bodyB64 = mime.split('Content-Transfer-Encoding: base64\r\n\r\n')[1].split('\r\n--B')[0].replace(/\r\n/g, '');
+eq(Buffer.from(bodyB64, 'base64').toString('utf8'), 'Line 1\r\nLíne 2', 'UTF-8 body round-trips with CRLF');
+eq(mime.trim().endsWith('--B--'), true, 'MIME closing boundary');
+eq(/[+/=]/.test(L.base64UrlAscii(mime)), false, 'base64url has no + / =');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
