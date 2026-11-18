@@ -1259,7 +1259,9 @@ async function loadAll({ initial = false, silent = false } = {}) {
     console.error(e);
     state.loadError = friendlyError(e);
     setSync(navigator.onLine ? 'error' : 'offline');
-    if (initial) showFatal('Could not load your bookings.', state.loadError, true);
+    if (initial && (e.code === '42501' || /permission denied/i.test(e.message || ''))) {
+      showFatal('Database permissions are missing.', 'Run the latest supabase-setup.sql again in the Supabase SQL Editor (it is safe to re-run), then tap Try again.', true);
+    } else if (initial) showFatal('Could not load your bookings.', state.loadError, true);
     else if (!silent) toast(state.loadError, 'error');
     return false;
   }

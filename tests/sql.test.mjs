@@ -3,7 +3,8 @@ import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist';
 import fs from 'node:fs';
 
 const db = new PGlite({ extensions: { btree_gist } });
-const setup = fs.readFileSync(process.argv[2], 'utf8')
+// Like new Supabase projects: NO default table grants, so the script must grant explicitly.
+const setup = fs.readFileSync(process.argv[2], 'utf8').replace(/\('[^']+@[^']+', 'owner'\)/, "('you@example.com', 'owner')")
   .replace("('you@example.com', 'owner')", "('owner@test.dev', 'owner')");
 
 // ---- minimal Supabase shim ----
@@ -17,8 +18,6 @@ await db.exec(`
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(auth.jwt()->>'sub','')::uuid $$;
   grant execute on all functions in schema auth to anon, authenticated;
-  alter default privileges in schema public grant all on tables to anon, authenticated;
-  alter default privileges in schema public grant all on functions to anon, authenticated;
   create publication supabase_realtime;
   insert into auth.users values ('11111111-1111-1111-1111-111111111111'), ('22222222-2222-2222-2222-222222222222');
 `);
