@@ -1193,7 +1193,7 @@ async function doEnterApp(session) {
     if (/Could not find the function|does not exist/i.test(error.message || '')) {
       return showFatal('The database is not set up yet.', 'Run supabase-setup.sql in the Supabase SQL Editor, then reload this page.', true);
     }
-    return showFatal('Could not verify your access.', friendlyError(error), true);
+    return showFatal('Could not verify your access.', friendlyError(error), true, techDetail(error));
   }
   if (!member) return showNotAuthorized();
   showSplash('Loading bookings…');
@@ -1260,8 +1260,8 @@ async function loadAll({ initial = false, silent = false } = {}) {
     state.loadError = friendlyError(e);
     setSync(navigator.onLine ? 'error' : 'offline');
     if (initial && (e.code === '42501' || /permission denied/i.test(e.message || ''))) {
-      showFatal('Database permissions are missing.', 'Run the latest supabase-setup.sql again in the Supabase SQL Editor (it is safe to re-run), then tap Try again.', true);
-    } else if (initial) showFatal('Could not load your bookings.', state.loadError, true);
+      showFatal('Database permissions are missing.', 'Run the latest supabase-setup.sql again in the Supabase SQL Editor (it is safe to re-run), then tap Try again.', true, techDetail(e));
+    } else if (initial) showFatal('Could not load your bookings.', state.loadError, true, techDetail(e));
     else if (!silent) toast(state.loadError, 'error');
     return false;
   }
@@ -1465,11 +1465,17 @@ function showNotAuthorized() {
   });
 }
 
-function showFatal(title, detail, canRetry = false) {
+/** Technical detail shown under errors so problems can be diagnosed from a screenshot. */
+function techDetail(e) {
+  if (!e) return '';
+  return [e.code, e.message, e.hint, e.details].filter(Boolean).join(' · ').slice(0, 300);
+}
+function showFatal(title, detail, canRetry = false, tech = '') {
   showAuthScreen(`
     <div class="brand-mark">CS</div>
     <h1>${esc(title)}</h1>
     <p class="sub">${esc(detail)}</p>
+    ${tech ? `<div class="code-box" style="font-size:12px;color:var(--text-2)">${esc(tech)}</div>` : ''}
     <button class="btn block" type="button" id="fatal-retry">Try again</button>
     ${state.configSource === 'device' ? '<div class="auth-foot"><button class="link-btn" type="button" id="fatal-reset">Change Supabase connection</button></div>' : ''}
     ${canRetry && state.session ? '<div class="auth-foot"><button class="link-btn" type="button" id="fatal-out">Sign out</button></div>' : ''}`, el => {
