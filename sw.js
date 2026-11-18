@@ -4,7 +4,7 @@
      GitHub show up on the next launch.
    - Supabase API / realtime requests are NEVER cached (always live data).
    Bump CACHE_VERSION when you change files to force a refresh. */
-const CACHE_VERSION = 'chico-v1.0.2';
+const CACHE_VERSION = 'chico-v1.0.3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 const CDN_PREFIX = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@';
 
@@ -42,7 +42,8 @@ self.addEventListener('fetch', event => {
   // Pages: network-first, fall back to the cached shell when offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).then(res => {
+      // 'no-cache' revalidates with GitHub instead of using a stale browser copy.
+      fetch(req, { cache: 'no-cache' }).then(res => {
         const copy = res.clone(); caches.open(CACHE_VERSION).then(c => c.put('./index.html', copy));
         return res;
       }).catch(() => caches.match('./index.html'))
