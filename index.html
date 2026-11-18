@@ -326,6 +326,15 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 .stepper-inline .icon-btn svg { width: 18px; height: 18px; }
 .stepper-inline span { min-width: 48px; text-align: center; font-weight: 600; font-size: 15px; }
 
+/* ---------- Month switcher (dashboard summary) ---------- */
+.month-bar {
+  display: flex; align-items: center; justify-content: space-between; background: var(--card);
+  border-radius: 14px; box-shadow: var(--shadow); padding: 4px; margin-bottom: 10px;
+}
+.month-bar span { font-weight: 650; font-size: 17px; letter-spacing: -.01em; }
+.month-bar .icon-btn { width: 48px; height: 44px; color: var(--accent); }
+@media (min-width: 700px) { .month-bar { max-width: 360px; } }
+
 /* ---------- Stat tiles ---------- */
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stats .stat:not(.hero) { padding: 13px 12px; }
@@ -710,7 +719,7 @@ const CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_NHoSMHIQdpKdSnITs09PTw_mAtpq3rj',
 };
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -935,6 +944,7 @@ const state = {
   sync: 'idle',            // idle | syncing | error | offline
   lastSync: null,
   dashYear: now0.getFullYear(),
+  dashMonth: { y: now0.getFullYear(), m: now0.getMonth() + 1 },   // month shown in the dashboard summary
   cal: { unitId: null, y: now0.getFullYear(), m: now0.getMonth() + 1, mode: 'month' },
   filter: { q: '', unit: 'all', status: 'upcoming', platform: 'all' },
   configSource: null,      // 'file' | 'device'
@@ -1554,8 +1564,13 @@ function statTile(label, value, meta = '', hero = false) {
 
 /* ---------- Dashboard ---------- */
 function viewDashboard() {
-  const y = state.dashYear;
-  const s = yearStats(unitIds(), y, state.bookings, state.blocks);
+  const { y, m } = state.dashMonth;
+  const s = monthStats(unitIds(), y, m, state.bookings, state.blocks);
+  const yearGross = yearStats(unitIds(), y, state.bookings, state.blocks).gross;
+  const n = new Date();
+  const isCurrent = y === n.getFullYear() && m === n.getMonth() + 1;
+  // Per-unit gross for the month, e.g. "24J ₱30,000 · 8T ₱12,000"
+  const perUnit = state.units.map(u => `${esc(unitShort(u))} ${formatPHP(monthStats([u.id], y, m, state.bookings, state.blocks).gross)}`).join(' · ');
   const today = todayISO();
   const upcoming = state.bookings.filter(b => b.check_out > today).slice(0, 6);
   return `
@@ -1563,9 +1578,14 @@ function viewDashboard() {
       <div class="titles"><div class="eyebrow">${greeting()} · ${esc(formatDate(today, { withYear: true }))}</div><h1>Dashboard</h1></div>
       <div class="actions">${syncHTML()}</div>
     </div>
-    <div class="section-head" style="margin-top:4px"><h2>Business summary</h2>${yearStepper('dash-year', y)}</div>
+    <div class="section-head" style="margin-top:4px"><h2>Monthly summary</h2>${isCurrent ? '' : '<button class="link-btn" data-action="dash-month-now">This month</button>'}</div>
+    <div class="month-bar" role="group" aria-label="Month">
+      <button class="icon-btn" data-action="dash-month" data-delta="-1" aria-label="Previous month">${I.left}</button>
+      <span class="num">${MONTHS[m - 1]} ${y}</span>
+      <button class="icon-btn" data-action="dash-month" data-delta="1" aria-label="Next month">${I.right}</button>
+    </div>
     <div class="stats">
-      ${statTile(`Gross earnings · ${y}`, formatPHP(s.gross), `${plural(state.units.length, 'unit')} combined`, true)}
+      ${statTile(`Gross earnings · ${MONTHS[m - 1]}`, formatPHP(s.gross), `${perUnit}<br>${formatPHP(yearGross)} total in ${y}`, true)}
       ${statTile('Bookings', s.count, 'by check-in')}
       ${statTile('Nights', s.bookedNights, `booked of ${s.openNights}`)}
       ${statTile('Occupancy', formatPct(s.occupancy), 'excl. blocked')}
@@ -2278,6 +2298,12 @@ const actions = {
   'close-sheet': () => closeSheet(),
   'sign-out': () => signOut(),
   'dash-year': el => { state.dashYear += Number(el.dataset.delta); rerender(); },
+  'dash-month': el => {
+    const r = shiftMonth(state.dashMonth.y, state.dashMonth.m, Number(el.dataset.delta));
+    state.dashMonth = r; state.dashYear = r.y;   // unit cards follow the year of the chosen month
+    rerender();
+  },
+  'dash-month-now': () => { const n = new Date(); state.dashMonth = { y: n.getFullYear(), m: n.getMonth() + 1 }; state.dashYear = n.getFullYear(); rerender(); },
   'cal-shift': el => { const r = shiftMonth(state.cal.y, state.cal.m, Number(el.dataset.delta)); state.cal.y = r.y; state.cal.m = r.m; rerender(); },
   'cal-today': () => { const n = new Date(); state.cal.y = n.getFullYear(); state.cal.m = n.getMonth() + 1; rerender(); },
   'cal-mode': el => { state.cal.mode = el.dataset.mode; rerender(); },

@@ -4,7 +4,7 @@
      GitHub show up on the next launch.
    - Supabase API / realtime requests are NEVER cached (always live data).
    Bump CACHE_VERSION when you change files to force a refresh. */
-const CACHE_VERSION = 'chico-v1.0.3';
+const CACHE_VERSION = 'chico-v1.1.0';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 const CDN_PREFIX = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@';
 
