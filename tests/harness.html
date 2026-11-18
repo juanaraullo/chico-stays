@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<!-- Local UI test harness: loads ../index.html with a mock Supabase backend.
+     Serve the project folder (e.g. `python3 -m http.server 8765`) and open
+     http://localhost:8765/tests/harness.html
+     Login: owner@test.dev / test1234 -->
+<meta charset="utf-8">
+<script>
+localStorage.setItem('chico.supabase.config', JSON.stringify({ url: 'https://mock-project.supabase.co', key: 'mock-publishable-key-for-tests' }));
+fetch('../index.html', { cache: 'no-store' }).then(r => r.text()).then(html => {
+  html = html.replace(/<script src="https:\/\/cdn\.jsdelivr\.net[^>]*><\/script>/, '<script src="mock-supabase.js"><\/script>')
+             .replace(/(href|src)="(manifest\.webmanifest|icons\/)/g, '$1="../$2');
+  document.open(); document.write(html); document.close();
+});
+</script>

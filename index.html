@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chico Stays</title>
+<meta name="description" content="Chico Stays – bookings tracker for BGC 24J and BGC 8T">
+<meta name="theme-color" content="#F7F6F3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Chico Stays">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<!-- Supabase JavaScript client (pinned version + integrity hash) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js"
+        integrity="sha384-uteMfOloLDGt042uDz+xHGF3ym63/WQ6rFq7murQRG8Ih7QrXGEGNtWd8688sb4O"
+        crossorigin="anonymous"></script>
+
+<style>
+/* =====================================================================
+   DESIGN TOKENS
+   Warm off-white background, white cards, charcoal text, one muted
+   blue accent. Platform colours are deliberately soft.
+   ===================================================================== */
+:root {
+  --bg: #F7F6F3;
+  --card: #FFFFFF;
+  --card-2: #FBFAF8;
+  --text: #1D1D1F;
+  --text-2: #6E6E73;
+  --text-3: #A1A1A6;
+  --line: #ECEAE6;
+  --line-2: #E2DFD9;
+  --accent: #3F6E94;
+  --accent-soft: #E7EEF4;
+  --accent-press: #355D7D;
+  --danger: #B5483F;
+  --danger-soft: #F7E7E5;
+  --success: #4E8A5E;
+
+  /* Platforms: solid (bars, dots) + tint (cell backgrounds) */
+  --airbnb: #C2615B;  --airbnb-t: #F6E4E2;
+  --direct: #6B9A76;  --direct-t: #E4EFE6;
+  --tiktok: #2E2E31;  --tiktok-t: #E3E3E6;
+  --other:  #9C9CA2;  --other-t:  #EEEEF0;
+  --blocked: #CFCBC4; --blocked-t: #F1EFEB;
+
+  --radius: 16px;
+  --radius-sm: 11px;
+  --shadow: 0 1px 2px rgba(29,29,31,.04), 0 4px 16px rgba(29,29,31,.04);
+  --shadow-lg: 0 10px 40px rgba(29,29,31,.14);
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: 58px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+body {
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+html.no-scroll, html.no-scroll body { overflow: hidden; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: manipulation; }
+a { color: var(--accent); text-decoration: none; }
+h1, h2, h3, p { margin: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-2); }
+.small { font-size: 13px; }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 20px; border-radius: 14px;
+  font-size: 16px; font-weight: 600; letter-spacing: -.01em;
+  background: var(--accent); color: #fff;
+  transition: transform .12s ease, background-color .15s ease, opacity .15s ease;
+  user-select: none; -webkit-user-select: none;
+}
+.btn:active { transform: scale(.97); background: var(--accent-press); }
+.btn:disabled { opacity: .45; pointer-events: none; }
+.btn.block { width: 100%; }
+.btn.secondary { background: var(--accent-soft); color: var(--accent); }
+.btn.secondary:active { background: #DCE6EF; }
+.btn.plain { background: #F1EFEB; color: var(--text); }
+.btn.plain:active { background: #E8E5DF; }
+.btn.danger { background: var(--danger-soft); color: var(--danger); }
+.btn.danger:active { background: #F1DAD7; }
+.btn.danger-solid { background: var(--danger); color: #fff; }
+.btn.sm { min-height: 38px; padding: 0 14px; font-size: 15px; border-radius: 11px; }
+.btn .spinner { width: 18px; height: 18px; border-width: 2px; border-color: rgba(255,255,255,.4); border-top-color: #fff; }
+.btn.secondary .spinner, .btn.plain .spinner, .btn.danger .spinner { border-color: rgba(0,0,0,.12); border-top-color: currentColor; }
+.icon-btn {
+  width: 44px; height: 44px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text); transition: background-color .15s ease, transform .12s ease;
+}
+.icon-btn:hover { background: rgba(0,0,0,.04); }
+.icon-btn:active { background: rgba(0,0,0,.07); transform: scale(.94); }
+.icon-btn svg { width: 22px; height: 22px; }
+.link-btn { color: var(--accent); font-weight: 500; min-height: 44px; padding: 0 6px; display: inline-flex; align-items: center; }
+.link-btn:active { opacity: .55; }
+
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2.5px solid var(--line-2); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; display: inline-block; flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Splash / auth ---------- */
+.screen-center {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: calc(24px + var(--safe-top)) 20px calc(24px + var(--safe-bottom));
+}
+.brand-mark {
+  width: 64px; height: 64px; border-radius: 18px; background: var(--text);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 22px; letter-spacing: -.02em; box-shadow: var(--shadow);
+}
+.splash-text { margin-top: 18px; color: var(--text-2); font-size: 15px; }
+.auth-card {
+  width: 100%; max-width: 400px; background: var(--card); border-radius: 22px;
+  padding: 28px 22px 22px; box-shadow: var(--shadow);
+}
+.auth-card .brand-mark { margin: 0 auto 16px; }
+.auth-card h1 { text-align: center; font-size: 24px; letter-spacing: -.02em; }
+.auth-card .sub { text-align: center; color: var(--text-2); margin: 6px 0 22px; font-size: 15px; }
+.auth-card .btn { margin-top: 8px; }
+.auth-foot { text-align: center; margin-top: 12px; }
+.form-error {
+  background: var(--danger-soft); color: var(--danger); border-radius: 12px;
+  padding: 11px 14px; font-size: 14px; margin-bottom: 14px;
+}
+.form-ok {
+  background: #E6F1E9; color: #2F6A3F; border-radius: 12px;
+  padding: 11px 14px; font-size: 14px; margin-bottom: 14px;
+}
+.code-box {
+  background: #F4F2EE; border-radius: 10px; padding: 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-all; margin: 10px 0; user-select: all; -webkit-user-select: all;
+}
+
+/* ---------- Form fields ---------- */
+.field { margin-bottom: 16px; }
+.field > label, .field-label {
+  display: block; font-size: 13px; font-weight: 600; color: var(--text-2);
+  margin: 0 0 7px 2px; letter-spacing: .01em;
+}
+.input, select.input, textarea.input {
+  width: 100%; min-height: 50px; padding: 12px 14px;
+  font: inherit; font-size: 16px; /* 16px stops iOS Safari zooming in */
+  color: var(--text); background: var(--card-2);
+  border: 1px solid var(--line-2); border-radius: 13px;
+  outline: none; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+  -webkit-appearance: none; appearance: none;
+}
+.input:focus { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(63,110,148,.14); }
+textarea.input { min-height: 88px; resize: vertical; line-height: 1.45; }
+select.input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' stroke='%236E6E73' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 15px center; padding-right: 38px;
+}
+input[type="date"].input { display: block; text-align: left; min-width: 0; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
+.input.invalid { border-color: var(--danger); }
+.money-wrap { position: relative; }
+.money-wrap .prefix { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-2); pointer-events: none; }
+.money-wrap .input { padding-left: 32px; }
+.field-hint { font-size: 13px; color: var(--text-2); margin: 7px 2px 0; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-row > .field { min-width: 0; }
+
+/* Segmented control (iOS style) */
+.segmented {
+  display: flex; background: #EEECE8; border-radius: 12px; padding: 3px; gap: 2px; width: 100%;
+}
+.segmented button, .segmented label {
+  flex: 1; min-height: 38px; border-radius: 9px; font-size: 14px; font-weight: 500; color: var(--text-2);
+  display: flex; align-items: center; justify-content: center; text-align: center; padding: 0 6px;
+  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; cursor: pointer;
+}
+.segmented .on, .segmented input:checked + span {
+  background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.segmented label { padding: 0; }
+.segmented label span { width: 100%; height: 100%; min-height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center; transition: inherit; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+
+/* Chip radio group (platform / reason pickers) */
+.chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.chip { position: relative; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span {
+  display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 14px;
+  border: 1px solid var(--line-2); border-radius: 13px; font-size: 15px; font-weight: 500;
+  background: var(--card-2); cursor: pointer; transition: all .15s ease;
+}
+.chip input:checked + span { border-color: var(--text); background: #fff; box-shadow: 0 0 0 1px var(--text) inset; }
+.chip input:focus-visible + span { box-shadow: 0 0 0 3px rgba(63,110,148,.25); }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--other); }
+
+.stepper { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: 13px; background: var(--card-2); overflow: hidden; height: 50px; }
+.stepper button { width: 48px; height: 100%; font-size: 22px; color: var(--accent); flex: none; }
+.stepper button:active { background: rgba(0,0,0,.05); }
+.stepper input { flex: 1; min-width: 0; text-align: center; border: 0; background: transparent; font: inherit; font-size: 17px; font-weight: 600; height: 100%; outline: none; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.notice {
+  display: flex; gap: 10px; align-items: flex-start; border-radius: 13px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px;
+  background: var(--accent-soft); color: #2E5272;
+}
+.notice.warn { background: var(--danger-soft); color: var(--danger); }
+.notice.ok { background: #E8F1EA; color: #356B44; }
+
+/* Platform colour classes */
+.p-airbnb { --pc: var(--airbnb); --pt: var(--airbnb-t); }
+.p-direct { --pc: var(--direct); --pt: var(--direct-t); }
+.p-tiktok { --pc: var(--tiktok); --pt: var(--tiktok-t); }
+.p-other  { --pc: var(--other);  --pt: var(--other-t); }
+.p-blocked { --pc: var(--blocked); --pt: var(--blocked-t); }
+.dot.p-airbnb, .dot.p-direct, .dot.p-tiktok, .dot.p-other, .dot.p-blocked { background: var(--pc); }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; background: var(--pt, #eee); color: var(--pc, var(--text));
+}
+.pill.p-tiktok { color: var(--tiktok); }
+.pill.p-other { color: #6E6E73; }
+.pill.p-blocked { color: #7C776F; }
+
+/* =====================================================================
+   APP SHELL
+   Mobile: content + bottom tab bar.  Desktop (≥900px): sidebar.
+   ===================================================================== */
+.app { min-height: 100vh; min-height: 100dvh; }
+.sidebar { display: none; }
+.main {
+  padding: calc(10px + var(--safe-top)) 16px calc(var(--tabbar-h) + var(--safe-bottom) + 28px);
+  max-width: 1120px; margin: 0 auto;
+}
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  height: calc(var(--tabbar-h) + var(--safe-bottom)); padding-bottom: var(--safe-bottom);
+  background: rgba(251,250,248,.86);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-top: .5px solid rgba(0,0,0,.1);
+}
+.tabbar a {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: var(--text-3); font-size: 11px; font-weight: 500; transition: color .15s ease;
+}
+.tabbar a svg { width: 25px; height: 25px; }
+.tabbar a.active { color: var(--accent); }
+.tabbar a:active { opacity: .6; }
+
+@media (min-width: 900px) {
+  .app { display: grid; grid-template-columns: 248px 1fr; }
+  .tabbar { display: none; }
+  .sidebar {
+    display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+    padding: 26px 16px 20px; border-right: 1px solid var(--line); background: #FBFAF8;
+  }
+  .sidebar .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 26px; }
+  .sidebar .brand .brand-mark { width: 38px; height: 38px; border-radius: 11px; font-size: 14px; box-shadow: none; }
+  .sidebar .brand b { display: block; font-size: 16px; letter-spacing: -.01em; }
+  .sidebar .brand small { color: var(--text-2); font-size: 12px; }
+  .sidebar nav a {
+    display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 11px;
+    color: var(--text-2); font-weight: 500; font-size: 15px; margin-bottom: 2px;
+  }
+  .sidebar nav a svg { width: 20px; height: 20px; }
+  .sidebar nav a:hover { background: rgba(0,0,0,.035); color: var(--text); }
+  .sidebar nav a.active { background: var(--accent-soft); color: var(--accent); }
+  .sidebar .side-foot { margin-top: auto; padding: 14px 8px 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-2); }
+  .sidebar .side-foot .email { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 6px 0 4px; }
+  .main { padding: 34px 40px 60px; width: 100%; }
+}
+
+/* Page header */
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 8px 0 18px; }
+.page-head .titles { min-width: 0; }
+.page-head h1 { font-size: 30px; font-weight: 700; letter-spacing: -.025em; line-height: 1.15; }
+.page-head .eyebrow { font-size: 13px; color: var(--text-2); font-weight: 500; margin-bottom: 2px; }
+.page-head .actions { display: flex; gap: 8px; align-items: center; flex: none; }
+.back-row { display: flex; align-items: center; justify-content: space-between; margin: 0 -8px 2px; }
+.back-row .link-btn svg { width: 20px; height: 20px; margin-right: 2px; }
+
+.sync {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2);
+  padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,.035); min-height: 28px;
+}
+.sync i { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.sync.syncing i { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.sync.error i, .sync.offline i { background: var(--danger); }
+@keyframes pulse { 50% { opacity: .3; } }
+
+.section { margin-top: 28px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 12px; gap: 10px; }
+.section-head h2 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.section-head .link-btn { white-space: nowrap; flex: none; }
+
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); }
+.card-pad { padding: 18px; }
+
+/* ---------- Year stepper ---------- */
+.stepper-inline { display: inline-flex; align-items: center; background: var(--card); border-radius: 12px; box-shadow: var(--shadow); }
+.stepper-inline .icon-btn { width: 40px; height: 40px; }
+.stepper-inline .icon-btn svg { width: 18px; height: 18px; }
+.stepper-inline span { min-width: 48px; text-align: center; font-weight: 600; font-size: 15px; }
+
+/* ---------- Stat tiles ---------- */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stats .stat:not(.hero) { padding: 13px 12px; }
+.stats .stat:not(.hero) .value { font-size: 21px; }
+.stats .stat:not(.hero) .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 15px 16px; min-width: 0; }
+.stat .label { font-size: 13px; color: var(--text-2); font-weight: 500; }
+.stat .value { font-size: 24px; font-weight: 700; letter-spacing: -.025em; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.stat.hero { grid-column: 1 / -1; }
+.stat.hero .value { font-size: 32px; }
+@media (min-width: 700px) {
+  .stats { grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .stat.hero { grid-column: auto; }
+  .stats .stat .value, .stat.hero .value { font-size: 24px; }
+  .stats .stat:not(.hero) { padding: 15px 16px; }
+}
+
+/* ---------- Unit cards ---------- */
+.unit-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 700px) { .unit-grid { grid-template-columns: 1fr 1fr; gap: 18px; } }
+.unit-card {
+  display: block; width: 100%; text-align: left; background: var(--card); border-radius: 20px; box-shadow: var(--shadow);
+  padding: 18px; transition: transform .15s ease, box-shadow .2s ease; color: inherit;
+}
+.unit-card:hover { box-shadow: 0 2px 4px rgba(0,0,0,.04), 0 10px 30px rgba(0,0,0,.07); }
+.unit-card:active { transform: scale(.985); }
+.unit-top { display: flex; align-items: center; gap: 12px; }
+.unit-badge {
+  width: 46px; height: 46px; border-radius: 13px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px; letter-spacing: -.02em; color: #fff; background: var(--ub, var(--accent));
+}
+.unit-top .name { font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+.unit-top .sub { font-size: 13px; color: var(--text-2); }
+.unit-top .chev { margin-left: auto; color: var(--text-3); }
+.unit-body { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+@media (min-width: 420px) { .unit-body { grid-template-columns: 1.05fr 1fr; align-items: start; } }
+.kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 10px; }
+.kv .k { font-size: 12px; color: var(--text-2); font-weight: 500; }
+.kv .v { font-size: 17px; font-weight: 650; letter-spacing: -.02em; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.occ-bar { height: 6px; background: #EFEDE9; border-radius: 999px; overflow: hidden; margin-top: 6px; }
+.occ-bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
+
+/* Mini calendar (unit-card preview + year view) */
+.mini-cal .mc-title { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; display: flex; justify-content: space-between; }
+.mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px 0; }
+.mini-grid .wd { font-size: 10px; color: var(--text-3); text-align: center; font-weight: 600; padding-bottom: 2px; }
+.mini-grid .md {
+  height: 24px; display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; color: var(--text); font-variant-numeric: tabular-nums; position: relative;
+}
+.mini-grid .md.bk { background: var(--pt); color: var(--text); }
+.mini-grid .md.bk.s { border-top-left-radius: 7px; border-bottom-left-radius: 7px; margin-left: 2px; }
+.mini-grid .md.bk.e { border-top-right-radius: 7px; border-bottom-right-radius: 7px; margin-right: 2px; }
+.mini-grid .md.bl { background: repeating-linear-gradient(135deg, var(--blocked-t) 0 4px, #E6E3DD 4px 6px); color: var(--text-2); }
+.mini-grid .md.today::after { content: ""; position: absolute; top: 2px; left: 50%; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--accent) inset; }
+.mini-grid .md.past { color: var(--text-3); }
+.mini-grid button.md { width: 100%; }
+.mini-grid button.md:active { opacity: .5; }
+
+/* ---------- Upcoming / booking list rows ---------- */
+.list { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 13px 16px; min-height: 64px; position: relative; transition: background-color .12s ease;
+}
+.row + .row::before { content: ""; position: absolute; top: 0; left: 40px; right: 0; border-top: 1px solid var(--line); }
+.row:active { background: #F5F4F1; }
+.row .rbar { width: 4px; align-self: stretch; border-radius: 4px; background: var(--pc); flex: none; margin: 2px 0; }
+.row .rmain { flex: 1; min-width: 0; }
+.row .rtitle { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
+.row .rsub { font-size: 13px; color: var(--text-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .rend { text-align: right; flex: none; }
+.row .ramt { font-weight: 600; font-size: 15px; }
+.row .rnights { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.row .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); margin-left: 6px; vertical-align: 1px; }
+.row .tag.now { background: #E6F1E9; color: #356B44; }
+.group-title { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin: 22px 4px 8px; display: flex; justify-content: space-between; }
+.empty { text-align: center; color: var(--text-2); padding: 34px 20px; font-size: 15px; }
+.empty b { display: block; color: var(--text); font-size: 17px; margin-bottom: 4px; }
+
+/* =====================================================================
+   UNIT CALENDAR
+   ===================================================================== */
+.cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.cal-title-btn { font-size: 19px; font-weight: 650; letter-spacing: -.02em; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 2px; border-radius: 10px; white-space: nowrap; }
+.cal-title-btn svg { width: 16px; height: 16px; color: var(--text-3); }
+.cal-title-btn:active { opacity: .55; }
+.cal-nav { display: flex; align-items: center; gap: 2px; }
+.today-btn { font-size: 14px; font-weight: 600; color: var(--accent); padding: 0 11px; min-height: 36px; border-radius: 10px; background: var(--accent-soft); margin-right: 2px; white-space: nowrap; }
+.cal-nav .icon-btn { width: 42px; }
+.cal-toolbar .cal-title-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 359px) { /* iPhone SE (1st gen) / small Android */
+  .cal-title-btn { font-size: 17px; }
+  .cal-title-btn svg { width: 13px; height: 13px; }
+  .today-btn { padding: 0 8px; font-size: 13px; }
+  .cal-nav .icon-btn { width: 36px; }
+  .main { padding-left: 12px; padding-right: 12px; }
+}
+.today-btn:active { opacity: .6; }
+.view-switch { max-width: 260px; margin-bottom: 14px; }
+
+.cal-card { padding: 10px 8px 12px; }
+.cal-head { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 0 6px; }
+.cal-head div { text-align: center; font-size: 12px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .03em; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 4px; }
+.cal-day {
+  position: relative; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding-top: 6px; border-radius: 0; transition: background-color .12s ease; min-width: 0;
+}
+.cal-day:active { background: rgba(0,0,0,.04); }
+.cal-day .dn {
+  width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; position: relative; z-index: 1;
+}
+.cal-day.past .dn { color: var(--text-3); }
+.cal-day.today .dn { background: var(--accent); color: #fff; font-weight: 700; }
+.cal-day.empty-cell { pointer-events: none; }
+
+/* Occupied: tinted band through the row + a solid bar at the bottom */
+.cal-day.bk { background: var(--pt); }
+.cal-day.bk.s { border-top-left-radius: 14px; border-bottom-left-radius: 14px; margin-left: 3px; }
+.cal-day.bk.e { border-top-right-radius: 14px; border-bottom-right-radius: 14px; margin-right: 3px; }
+.cal-day.bk .bar {
+  position: absolute; left: 0; right: 0; bottom: 8px; height: 5px; background: var(--pc);
+}
+.cal-day.bk.s .bar { left: 8px; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+.cal-day.bk.e .bar { right: 8px; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+.cal-day .lbl { display: none; }
+.cal-day.bl { background: repeating-linear-gradient(135deg, var(--blocked-t) 0 6px, #E8E5DF 6px 8px); }
+.cal-day.bl.s { border-top-left-radius: 14px; border-bottom-left-radius: 14px; margin-left: 3px; }
+.cal-day.bl.e { border-top-right-radius: 14px; border-bottom-right-radius: 14px; margin-right: 3px; }
+.cal-day.bl .dn { color: var(--text-2); }
+.cal-day.today .dn { background: var(--accent); color: #fff; font-weight: 700; } /* today always wins */
+/* Check-out marker (tablet/desktop): small notch when a guest leaves that morning */
+.cal-day.co::before { display: none; }
+@media (min-width: 700px) { .cal-day.co::before { display: block;
+  content: ""; position: absolute; left: 0; bottom: 8px; width: 7px; height: 5px;
+  background: var(--co, var(--other)); border-top-right-radius: 4px; border-bottom-right-radius: 4px; opacity: .55;
+} }
+.cal-day.bk.s.co::before { left: -3px; }
+
+@media (min-width: 700px) {
+  .cal-card { padding: 14px 14px 16px; }
+  .cal-day { height: 92px; align-items: stretch; padding: 8px 0 0; }
+  .cal-day .dn { margin-left: 8px; width: 30px; height: 30px; font-size: 15px; }
+  .cal-day.bk.s .dn, .cal-day.bl.s .dn { margin-left: 5px; }
+  .cal-day.bk .bar { height: 24px; bottom: 10px; display: flex; align-items: center; overflow: hidden; }
+  .cal-day.bk.s .bar { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+  .cal-day.bk.e .bar { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+  .cal-day .lbl {
+    display: block; position: absolute; left: 10px; right: 6px; bottom: 10px; height: 24px; line-height: 24px;
+    font-size: 12.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: visible; z-index: 2; pointer-events: none;
+  }
+  .cal-day.bl .lbl { color: #7C776F; bottom: 14px; }
+  .cal-day.co::before { height: 24px; bottom: 10px; width: 10px; border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 4px 0; font-size: 13px; color: var(--text-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 12px; height: 12px; border-radius: 4px; background: var(--pc); }
+.legend .sw.blk { background: repeating-linear-gradient(135deg, var(--blocked-t) 0 3px, #D8D4CD 3px 5px); }
+.legend .sw.avail { background: #fff; box-shadow: 0 0 0 1px var(--line-2) inset; }
+
+/* Year view */
+.year-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.year-month { padding: 10px 6px 8px; min-width: 0; }
+.year-month .ym-head { display: flex; flex-direction: column; align-items: flex-start; margin: 0 4px 4px; }
+.year-month .ym-head button { font-weight: 650; font-size: 16px; letter-spacing: -.01em; min-height: 32px; color: var(--accent); }
+.year-month .ym-head button:active { opacity: .55; }
+.year-month .ym-head span { font-size: 11.5px; color: var(--text-2); margin-bottom: 4px; white-space: nowrap; }
+.year-month .mini-grid .wd { font-size: 9.5px; }
+.year-month .mini-grid .md { height: 26px; font-size: 12px; }
+@media (min-width: 700px) {
+  .year-grid { grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .year-month { padding: 14px 12px 12px; }
+  .year-month .ym-head { flex-direction: row; justify-content: space-between; align-items: center; }
+  .year-month .ym-head span { margin: 0; }
+  .year-month .mini-grid .md { height: 32px; font-size: 13.5px; }
+  .year-month .mini-grid .md.today::after { width: 28px; height: 28px; margin-left: -14px; top: 2px; }
+}
+
+/* Revenue by month */
+.bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; align-items: end; height: 120px; padding: 6px 2px 0; }
+.bars button { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; min-width: 0; }
+.bars i { display: block; width: 100%; max-width: 26px; border-radius: 6px 6px 3px 3px; background: #DDE6EE; min-height: 3px; transition: height .3s ease; }
+.bars button.cur i { background: var(--accent); }
+.bars small { font-size: 10.5px; color: var(--text-2); font-weight: 500; }
+.bars button:active { opacity: .6; }
+
+.split { display: grid; grid-template-columns: 1fr; gap: 14px; }
+@media (min-width: 1000px) { .split { grid-template-columns: 1.6fr 1fr; align-items: start; gap: 20px; } }
+
+.sum-table { width: 100%; }
+.sum-row { display: flex; justify-content: space-between; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--line); gap: 10px; }
+.sum-row:last-child { border-bottom: 0; }
+.sum-row .k { color: var(--text-2); font-size: 15px; }
+.sum-row .v { font-weight: 650; font-size: 16px; letter-spacing: -.01em; text-align: right; }
+.sum-title { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+
+/* Floating action button (mobile, one-hand reach) */
+.fab {
+  position: fixed; right: 18px; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 16px); z-index: 35;
+  width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 20px rgba(63,110,148,.35);
+  transition: transform .15s ease, background-color .15s ease;
+}
+.fab:active { transform: scale(.92); background: var(--accent-press); }
+.fab svg { width: 26px; height: 26px; }
+@media (min-width: 900px) { .fab { display: none; } }
+.desk-only { display: none !important; }
+@media (min-width: 900px) { .desk-only { display: inline-flex !important; } }
+
+/* Filters (bookings page) */
+.filters { display: grid; gap: 10px; margin-bottom: 6px; }
+@media (min-width: 900px) { .filters { grid-template-columns: 1.3fr 1fr 1fr; align-items: center; } }
+.search { position: relative; }
+.search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--text-3); }
+.search .input { padding-left: 40px; background: var(--card); min-height: 46px; }
+.filter-row { display: flex; gap: 10px; }
+.filter-row select.input { background-color: var(--card); min-height: 46px; }
+
+/* Settings */
+.settings-group { margin-bottom: 26px; }
+.settings-group h3 { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; margin: 0 4px 8px; }
+.srow { display: flex; align-items: center; gap: 12px; padding: 13px 16px; min-height: 56px; width: 100%; text-align: left; position: relative; }
+.srow + .srow::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 1px solid var(--line); }
+button.srow:active { background: #F5F4F1; }
+.srow .sl { flex: 1; min-width: 0; }
+.srow .sl b { font-weight: 500; display: block; }
+.srow .sl small { color: var(--text-2); font-size: 13px; display: block; margin-top: 1px; overflow-wrap: anywhere; }
+.srow .sr { color: var(--text-2); font-size: 15px; display: flex; align-items: center; gap: 6px; flex: none; }
+.srow .sr svg { width: 18px; height: 18px; color: var(--text-3); }
+.srow.danger b { color: var(--danger); }
+.srow.accent b { color: var(--accent); }
+.install-steps { padding: 4px 16px 14px 34px; margin: 0; color: var(--text-2); font-size: 14px; }
+.install-steps li { margin-bottom: 4px; }
+
+/* =====================================================================
+   BOTTOM SHEETS (mobile) / MODALS (desktop)
+   The wrapper follows the *visual* viewport so the sheet stays above
+   the iPhone keyboard.
+   ===================================================================== */
+.sheet-wrap {
+  position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100%); z-index: 100;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet-backdrop { position: absolute; inset: -200px 0; background: rgba(20,20,22,.32); opacity: 0; transition: opacity .25s ease; }
+.sheet {
+  position: relative; width: 100%; max-height: calc(100% - 12px - var(--safe-top));
+  background: var(--card); border-radius: 22px 22px 0 0; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; transform: translateY(100%);
+  transition: transform .32s cubic-bezier(.2,.8,.2,1);
+}
+.sheet-wrap.open .sheet-backdrop { opacity: 1; }
+.sheet-wrap.open .sheet { transform: none; }
+.sheet-wrap.dragging .sheet { transition: none; }
+.sheet-grab { padding: 8px 0 2px; display: flex; justify-content: center; touch-action: none; }
+.sheet-grab i { width: 38px; height: 5px; border-radius: 3px; background: #DAD7D1; }
+.sheet-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 2px 10px 8px; touch-action: none; }
+.sheet-head h2 { font-size: 17px; font-weight: 650; text-align: center; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-head .l { justify-self: start; }
+.sheet-head .r { justify-self: end; }
+.sheet-body { padding: 8px 18px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; flex: 1; min-height: 0; }
+.sheet-foot { padding: 12px 18px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--line); display: flex; gap: 10px; background: var(--card); }
+.sheet-foot .btn { flex: 1; }
+@media (min-width: 700px) {
+  .sheet-wrap { align-items: center; padding: 24px; }
+  .sheet { max-width: 520px; border-radius: 22px; transform: translateY(16px) scale(.98); opacity: 0; transition: transform .22s ease, opacity .22s ease; max-height: min(86vh, calc(100% - 48px)); }
+  .sheet-wrap.open .sheet { opacity: 1; }
+  .sheet-grab { display: none; }
+  .sheet-head { padding-top: 12px; }
+  .sheet-foot { padding-bottom: 14px; border-radius: 0 0 22px 22px; }
+}
+
+/* Booking detail */
+.detail-hero { text-align: center; padding: 4px 0 18px; }
+.detail-hero .guest { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin: 10px 0 2px; overflow-wrap: anywhere; }
+.detail-hero .unit { color: var(--text-2); font-size: 15px; }
+.date-pair { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 16px; }
+.date-pair .dp { min-width: 0; }
+.date-pair .dp:last-child { text-align: right; }
+.date-pair small { display: block; font-size: 12px; color: var(--text-2); font-weight: 500; }
+.date-pair b { display: block; font-size: 16px; font-weight: 650; margin-top: 2px; }
+.date-pair .arrow { color: var(--text-3); text-align: center; font-size: 12px; }
+.date-pair .arrow b { font-size: 15px; color: var(--text); }
+.notes-box { background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; }
+.calc-line { display: flex; justify-content: space-between; align-items: center; background: var(--card-2); border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px; margin-bottom: 16px; font-size: 15px; }
+.calc-line b { font-weight: 650; }
+
+/* Month picker */
+.mp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.mp-grid button { min-height: 50px; border-radius: 12px; background: var(--card-2); border: 1px solid var(--line); font-weight: 500; }
+.mp-grid button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.mp-grid button:active { transform: scale(.97); }
+.mp-year { display: flex; align-items: center; justify-content: center; gap: 18px; font-size: 22px; font-weight: 700; }
+
+/* Alert (confirm dialog) */
+.alert-wrap { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(20,20,22,.32); opacity: 0; transition: opacity .18s ease; }
+.alert-wrap.open { opacity: 1; }
+.alert { width: 100%; max-width: 320px; background: rgba(252,252,251,.98); border-radius: 18px; overflow: hidden; text-align: center; transform: scale(1.06); transition: transform .18s ease; box-shadow: var(--shadow-lg); }
+.alert-wrap.open .alert { transform: none; }
+.alert .ab { padding: 20px 18px 16px; }
+.alert h3 { font-size: 17px; font-weight: 650; }
+.alert p { font-size: 14px; color: var(--text-2); margin-top: 6px; }
+.alert .acts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--line-2); }
+.alert .acts button { min-height: 50px; font-size: 17px; color: var(--accent); }
+.alert .acts button + button { border-left: 1px solid var(--line-2); }
+.alert .acts button.destructive { color: var(--danger); font-weight: 600; }
+.alert .acts button:active { background: rgba(0,0,0,.05); }
+
+/* Toasts */
+.toast-root { position: fixed; left: 0; right: 0; top: calc(10px + var(--safe-top)); z-index: 300; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 16px; }
+.toast {
+  pointer-events: auto; max-width: 440px; width: fit-content; background: rgba(29,29,31,.92); color: #fff;
+  padding: 12px 16px; border-radius: 14px; font-size: 15px; box-shadow: var(--shadow-lg);
+  display: flex; gap: 10px; align-items: center; transform: translateY(-14px); opacity: 0; transition: all .25s ease;
+}
+.toast.show { transform: none; opacity: 1; }
+.toast.error { background: #9E3B33; }
+.toast svg { width: 18px; height: 18px; flex: none; }
+
+.page-enter { animation: fadeUp .26s ease both; }
+/* Opacity only: a transform here would trap the fixed "+" button inside the page. */
+@keyframes fadeUp { from { opacity: 0; } to { opacity: 1; } }
+.load-error { text-align: center; padding: 40px 20px; }
+.load-error p { color: var(--text-2); margin: 8px 0 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading splash -->
+<div id="splash" class="screen-center">
+  <div class="brand-mark">CS</div>
+  <div class="spinner" style="margin-top:26px"></div>
+  <div class="splash-text" id="splash-text">Loading Chico Stays…</div>
+</div>
+
+<!-- Auth / setup screens are rendered here -->
+<div id="auth-screen" hidden></div>
+
+<!-- Main app shell -->
+<div id="app" class="app" hidden>
+  <aside class="sidebar" aria-label="Main navigation">
+    <div class="brand"><div class="brand-mark">CS</div><div><b>Chico Stays</b><small>Bookings tracker</small></div></div>
+    <nav id="side-nav"></nav>
+    <div class="side-foot">
+      <div>Signed in as</div>
+      <div class="email" id="side-email"></div>
+      <button class="link-btn" style="padding:0;min-height:34px" data-action="sign-out">Sign out</button>
+    </div>
+  </aside>
+  <main id="main" class="main" tabindex="-1"></main>
+  <nav class="tabbar" id="tabbar" aria-label="Main navigation"></nav>
+</div>
+
+<div id="sheet-root"></div>
+<div id="alert-root"></div>
+<div class="toast-root" id="toast-root" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   CHICO STAYS – Bookings Tracker
+   Single-file app: vanilla JS + Supabase.
+
+   CONFIGURATION
+   Paste your Supabase Project URL and publishable (anon) key below.
+   Both values are SAFE to publish – your data is protected by Row Level
+   Security + login. NEVER put the service_role / secret key here.
+
+   If you leave them empty, the app shows a one-time setup screen where
+   you can paste them; they are then saved on that device only.
+   ===================================================================== */
+const CONFIG = {
+  SUPABASE_URL: 'https://jioipqhmhccfnlhfvyyk.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_NHoSMHIQdpKdSnITs09PTw_mAtpq3rj',
+};
+
+const APP_VERSION = '1.0.0';
+const LS_CONFIG_KEY = 'chico.supabase.config';
+const LS_PREFS_KEY = 'chico.prefs';
+
+// ==LOGIC-START==
+/* =====================================================================
+   PURE LOGIC  (no DOM – unit-tested separately)
+   Dates are handled as 'YYYY-MM-DD' strings and all arithmetic is done
+   in UTC so time zones / daylight-saving can never shift a day.
+   ===================================================================== */
+const PLATFORMS = {
+  airbnb: { label: 'Airbnb',         short: 'Airbnb' },
+  direct: { label: 'Direct Booking', short: 'Direct' },
+  tiktok: { label: 'TikTok',         short: 'TikTok' },
+  other:  { label: 'Other',          short: 'Other'  },
+};
+const BLOCK_REASONS = {
+  personal:    'Personal use',
+  maintenance: 'Maintenance',
+  other:       'Other',
+};
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const WEEKDAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+const pad2 = n => String(n).padStart(2, '0');
+/** Build an ISO date string. m is 1-12. */
+function toISO(y, m, d) { return `${y}-${pad2(m)}-${pad2(d)}`; }
+/** Parse 'YYYY-MM-DD' → {y, m (1-12), d}. */
+function parseISO(s) { const [y, m, d] = s.split('-').map(Number); return { y, m, d }; }
+function isValidISO(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const { y, m, d } = parseISO(s);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+function isoToUTC(s) { const { y, m, d } = parseISO(s); return Date.UTC(y, m - 1, d); }
+function utcToISO(t) { const dt = new Date(t); return toISO(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()); }
+function addDays(s, n) { return utcToISO(isoToUTC(s) + n * 86400000); }
+/** Whole days from a to b (b − a). */
+function diffDays(a, b) { return Math.round((isoToUTC(b) - isoToUTC(a)) / 86400000); }
+function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+/** 0 = Sunday */
+function weekday(s) { return new Date(isoToUTC(s)).getUTCDay(); }
+/** Today's date on this device, as ISO. */
+function todayISO(now = new Date()) { return toISO(now.getFullYear(), now.getMonth() + 1, now.getDate()); }
+function monthStart(y, m) { return toISO(y, m, 1); }
+function nextMonthStart(y, m) { return m === 12 ? toISO(y + 1, 1, 1) : toISO(y, m + 1, 1); }
+function shiftMonth(y, m, delta) { const i = y * 12 + (m - 1) + delta; return { y: Math.floor(i / 12), m: (i % 12) + 1 }; }
+
+/** Number of booked nights: check-in counts, check-out does not. */
+function nightsBetween(checkIn, checkOut) { return diffDays(checkIn, checkOut); }
+
+/** Do half-open ranges [aS, aE) and [bS, bE) overlap? ISO strings compare correctly as text. */
+function rangesOverlap(aS, aE, bS, bE) { return aS < bE && bS < aE; }
+/** Nights of [s, e) that fall inside [ps, pe). */
+function overlapNights(s, e, ps, pe) {
+  const start = s > ps ? s : ps;
+  const end = e < pe ? e : pe;
+  return end > start ? diffDays(start, end) : 0;
+}
+/** Blocks store an inclusive last night; convert to half-open [start, end+1). */
+function blockRange(b) { return [b.start_date, addDays(b.end_date, 1)]; }
+
+/**
+ * Find the first booking or block that conflicts with a proposed stay.
+ * kind: 'booking' → proposed [start, end) is check-in/check-out
+ *       'block'   → proposed [start, end) is already half-open (end = last night + 1)
+ * excludeId skips the record being edited.
+ */
+function findConflict({ unitId, start, end, excludeId = null }, bookings, blocks) {
+  for (const b of bookings) {
+    if (b.unit_id !== unitId || b.id === excludeId) continue;
+    if (rangesOverlap(start, end, b.check_in, b.check_out)) return { type: 'booking', item: b };
+  }
+  for (const k of blocks) {
+    if (k.unit_id !== unitId || k.id === excludeId) continue;
+    const [ks, ke] = blockRange(k);
+    if (rangesOverlap(start, end, ks, ke)) return { type: 'block', item: k };
+  }
+  return null;
+}
+
+/**
+ * Day-by-day occupancy map for one unit over [from, to).
+ * Each day → { kind: 'booking'|'blocked'|null, item, first, last, checkout }
+ *   first    = check-in night / first blocked night
+ *   last     = last occupied night (the night before check-out) / last blocked night
+ *   checkout = booking whose guest checks out that morning (if any)
+ */
+function buildDayMap(unitId, from, to, bookings, blocks) {
+  const map = {};
+  for (let d = from; d < to; d = addDays(d, 1)) map[d] = { kind: null, item: null, first: false, last: false, checkout: null };
+  for (const b of bookings) {
+    if (b.unit_id !== unitId || !rangesOverlap(b.check_in, b.check_out, from, to)) {
+      if (b.unit_id === unitId && map[b.check_out]) map[b.check_out].checkout = b;
+      continue;
+    }
+    const lastNight = addDays(b.check_out, -1);
+    for (let d = b.check_in > from ? b.check_in : from; d < b.check_out && d < to; d = addDays(d, 1)) {
+      Object.assign(map[d], { kind: 'booking', item: b, first: d === b.check_in, last: d === lastNight });
+    }
+    if (map[b.check_out]) map[b.check_out].checkout = b;
+  }
+  for (const k of blocks) {
+    if (k.unit_id !== unitId) continue;
+    const [ks, ke] = blockRange(k);
+    if (!rangesOverlap(ks, ke, from, to)) continue;
+    for (let d = ks > from ? ks : from; d < ke && d < to; d = addDays(d, 1)) {
+      Object.assign(map[d], { kind: 'blocked', item: k, first: d === k.start_date, last: d === k.end_date });
+    }
+  }
+  return map;
+}
+
+/**
+ * Statistics for a set of units over the period [start, end).
+ *  - bookings / gross: attributed by CHECK-IN date
+ *  - booked / blocked nights: actual nights that fall inside the period
+ *  - occupancy = booked nights ÷ nights open for booking (period nights − blocked nights)
+ */
+function periodStats(unitIds, start, end, bookings, blocks) {
+  const ids = new Set(unitIds);
+  let count = 0, gross = 0, bookedNights = 0, blockedNights = 0;
+  for (const b of bookings) {
+    if (!ids.has(b.unit_id)) continue;
+    if (b.check_in >= start && b.check_in < end) { count++; gross += Number(b.amount) || 0; }
+    bookedNights += overlapNights(b.check_in, b.check_out, start, end);
+  }
+  for (const k of blocks) {
+    if (!ids.has(k.unit_id)) continue;
+    const [ks, ke] = blockRange(k);
+    blockedNights += overlapNights(ks, ke, start, end);
+  }
+  const totalNights = diffDays(start, end) * ids.size;
+  const openNights = Math.max(0, totalNights - blockedNights);
+  const availableNights = Math.max(0, openNights - bookedNights);
+  const occupancy = openNights > 0 ? bookedNights / openNights : 0;
+  return { count, gross: Math.round(gross * 100) / 100, bookedNights, blockedNights, totalNights, openNights, availableNights, occupancy };
+}
+function yearStats(unitIds, y, bookings, blocks) { return periodStats(unitIds, toISO(y, 1, 1), toISO(y + 1, 1, 1), bookings, blocks); }
+function monthStats(unitIds, y, m, bookings, blocks) { return periodStats(unitIds, monthStart(y, m), nextMonthStart(y, m), bookings, blocks); }
+/** Year-to-date gross: check-ins from Jan 1 up to and including today (whole year for past years). */
+function ytdGross(unitIds, y, today, bookings) {
+  const start = toISO(y, 1, 1), yearEnd = toISO(y + 1, 1, 1);
+  let end = addDays(today, 1);
+  if (end > yearEnd) end = yearEnd;
+  if (end <= start) return 0;
+  return periodStats(unitIds, start, end, bookings, []).gross;
+}
+
+/** Validate a booking form payload. Returns an error message or null. */
+function validateBooking(p) {
+  if (!p.unit_id) return 'Choose a unit.';
+  if (!PLATFORMS[p.platform]) return 'Choose a booking platform.';
+  if (!p.guest_name || !p.guest_name.trim()) return 'Enter the guest name.';
+  if (p.guest_name.trim().length > 120) return 'Guest name is too long.';
+  if (!Number.isInteger(p.guest_count) || p.guest_count < 1 || p.guest_count > 50) return 'Number of guests must be between 1 and 50.';
+  if (!isValidISO(p.check_in)) return 'Choose a check-in date.';
+  if (!isValidISO(p.check_out)) return 'Choose a check-out date.';
+  if (p.check_out <= p.check_in) return 'Check-out must be after check-in.';
+  if (nightsBetween(p.check_in, p.check_out) > 366) return 'A booking can be at most 366 nights.';
+  if (!Number.isFinite(p.amount) || p.amount < 0) return 'Enter a valid booking amount (0 or more).';
+  if (p.amount > 9999999999.99) return 'Booking amount is too large.';
+  if (p.notes && p.notes.length > 2000) return 'Notes are too long (max 2,000 characters).';
+  return null;
+}
+function validateBlock(p) {
+  if (!p.unit_id) return 'Choose a unit.';
+  if (!BLOCK_REASONS[p.reason]) return 'Choose a reason.';
+  if (!isValidISO(p.start_date)) return 'Choose the first blocked date.';
+  if (!isValidISO(p.end_date)) return 'Choose the last blocked date.';
+  if (p.end_date < p.start_date) return 'The last blocked date cannot be before the first.';
+  if (diffDays(p.start_date, p.end_date) > 366) return 'A block can be at most 366 days.';
+  if (p.note && p.note.length > 500) return 'Note is too long (max 500 characters).';
+  return null;
+}
+/** Parse a peso amount typed by the user ("12,500.50" → 12500.5). */
+function parseAmount(s) {
+  const t = String(s ?? '').replace(/[₱,\s]/g, '');
+  if (t === '') return 0;
+  if (!/^\d+(\.\d{0,2})?$/.test(t)) return NaN;
+  return Number(t);
+}
+const _php0 = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const _php2 = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** ₱ formatting. Whole numbers show no decimals; otherwise two. */
+function formatPHP(n) {
+  const v = Number(n) || 0;
+  return (Math.round(v * 100) % 100 === 0 ? _php0 : _php2).format(v).replace(/^PHP\s?/, '₱');
+}
+function formatPct(x) { return `${Math.round(x * 100)}%`; }
+/** "Fri, Dec 5" (+ ", 2027" when not the current year) */
+function formatDate(s, { withYear = null, weekdayName = true } = {}) {
+  const { y, m, d } = parseISO(s);
+  const showYear = withYear ?? (y !== new Date().getFullYear());
+  return `${weekdayName ? WEEKDAYS_SHORT[weekday(s)] + ', ' : ''}${MONTHS_SHORT[m - 1]} ${d}${showYear ? ', ' + y : ''}`;
+}
+/** "Dec 1 – 5", "Dec 30 – Jan 2", "Dec 30, 2026 – Jan 2, 2027" */
+function formatRange(a, b) {
+  const A = parseISO(a), B = parseISO(b);
+  const cy = new Date().getFullYear();
+  if (A.y !== B.y) return `${MONTHS_SHORT[A.m - 1]} ${A.d}, ${A.y} – ${MONTHS_SHORT[B.m - 1]} ${B.d}, ${B.y}`;
+  const yr = A.y !== cy ? `, ${A.y}` : '';
+  if (A.m === B.m) return `${MONTHS_SHORT[A.m - 1]} ${A.d} – ${B.d}${yr}`;
+  return `${MONTHS_SHORT[A.m - 1]} ${A.d} – ${MONTHS_SHORT[B.m - 1]} ${B.d}${yr}`;
+}
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+// ==LOGIC-END==
+
+/* =====================================================================
+   APP STATE
+   ===================================================================== */
+const now0 = new Date();
+const state = {
+  client: null,
+  session: null,
+  units: [],
+  bookings: [],
+  blocks: [],
+  loaded: false,
+  loadError: null,
+  sync: 'idle',            // idle | syncing | error | offline
+  lastSync: null,
+  dashYear: now0.getFullYear(),
+  cal: { unitId: null, y: now0.getFullYear(), m: now0.getMonth() + 1, mode: 'month' },
+  filter: { q: '', unit: 'all', status: 'upcoming', platform: 'all' },
+  configSource: null,      // 'file' | 'device'
+};
+let realtimeChannel = null;
+let refreshTimer = null;
+
+/* ---------- tiny helpers ---------- */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+const unitById = id => state.units.find(u => u.id === id);
+const unitIds = () => state.units.map(u => u.id);
+const unitShort = u => (u?.name || '').replace(/^BGC\s*/i, '').trim() || (u?.name || '?');
+const UNIT_TONES = ['#3F6E94', '#6F8B6A', '#9A7652', '#7A6A92', '#5E8A8C', '#8C6B6B'];
+const unitTone = u => UNIT_TONES[Math.max(0, state.units.indexOf(u)) % UNIT_TONES.length];
+const firstName = s => String(s || '').trim().split(/\s+/)[0] || '';
+const platformLabel = p => PLATFORMS[p]?.label || 'Other';
+const pClass = p => `p-${PLATFORMS[p] ? p : 'other'}`;
+
+function loadPrefs() { try { return JSON.parse(localStorage.getItem(LS_PREFS_KEY) || '{}'); } catch { return {}; } }
+function savePrefs(patch) { try { localStorage.setItem(LS_PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); } catch { /* storage unavailable */ } }
+
+/* ---------- Icons (inline SVG, stroke-based) ---------- */
+const I = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v10.5h13V9"/><path d="M10 19.5v-5h4v5"/></svg>',
+  units: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M8.5 8h2M13.5 8h2M8.5 12h2M13.5 12h2M10.5 20.5v-3.5h3v3.5"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17M8 2.8v3.4M16 2.8v3.4M7.5 13.5h3M7.5 16.5h6"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.1"/></svg>',
+};
+
+/* =====================================================================
+   UI PRIMITIVES: toast, alert (confirm), bottom sheet
+   ===================================================================== */
+function toast(message, type = 'success', ms = 2600) {
+  const el = document.createElement('div');
+  el.className = `toast ${type === 'error' ? 'error' : ''}`;
+  el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  el.innerHTML = `${type === 'error' ? I.alert : I.check}<span>${esc(message)}</span>`;
+  $('#toast-root').appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  const remove = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 260); };
+  setTimeout(remove, type === 'error' ? Math.max(ms, 4500) : ms);
+  el.addEventListener('click', remove);
+}
+
+/** iOS-style confirm. Resolves true/false. */
+function confirmDialog({ title, message = '', confirmText = 'OK', destructive = false }) {
+  return new Promise(resolve => {
+    const root = $('#alert-root');
+    root.innerHTML = `
+      <div class="alert-wrap" role="alertdialog" aria-modal="true" aria-labelledby="al-t">
+        <div class="alert">
+          <div class="ab"><h3 id="al-t">${esc(title)}</h3>${message ? `<p>${esc(message)}</p>` : ''}</div>
+          <div class="acts">
+            <button type="button" data-r="0">Cancel</button>
+            <button type="button" data-r="1" class="${destructive ? 'destructive' : ''}">${esc(confirmText)}</button>
+          </div>
+        </div>
+      </div>`;
+    const wrap = root.firstElementChild;
+    requestAnimationFrame(() => wrap.classList.add('open'));
+    const done = v => { wrap.classList.remove('open'); setTimeout(() => { root.innerHTML = ''; }, 180); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.addEventListener('click', e => {
+      const b = e.target.closest('button[data-r]');
+      if (b) done(b.dataset.r === '1');
+      else if (e.target === wrap) done(false);
+    });
+    $('button[data-r="1"]', wrap).focus();
+  });
+}
+
+/* Sheets are a stack so a detail sheet can open an edit sheet on top. */
+const sheetStack = [];
+/**
+ * openSheet({ title, body, foot, left, right, onMount, onClose })
+ * body/foot are HTML strings. Returns the sheet element.
+ */
+function openSheet({ title, body, foot = '', left = '<button type="button" class="link-btn" data-action="close-sheet">Close</button>', right = '', onMount, onClose, form = false }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sheet-wrap';
+  const tag = form ? 'form' : 'div';
+  wrap.innerHTML = `
+    <div class="sheet-backdrop" data-action="close-sheet"></div>
+    <${tag} class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}" ${form ? 'novalidate' : ''}>
+      <div class="sheet-grab"><i></i></div>
+      <header class="sheet-head"><div class="l">${left}</div><h2>${esc(title)}</h2><div class="r">${right}</div></header>
+      <div class="sheet-body">${body}</div>
+      ${foot ? `<footer class="sheet-foot">${foot}</footer>` : ''}
+    </${tag}>`;
+  $('#sheet-root').appendChild(wrap);
+  document.documentElement.classList.add('no-scroll');
+  sheetStack.push({ wrap, onClose });
+  enableSheetDrag(wrap);
+  requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.add('open')));
+  if (onMount) onMount(wrap);
+  return wrap;
+}
+function closeSheet() {
+  const top = sheetStack.pop();
+  if (!top) return;
+  top.wrap.classList.remove('open');
+  if (top.onClose) top.onClose();
+  setTimeout(() => top.wrap.remove(), 330);
+  if (!sheetStack.length) document.documentElement.classList.remove('no-scroll');
+}
+function closeAllSheets() { while (sheetStack.length) closeSheet(); }
+
+/* Swipe the sheet down by its grabber/header to dismiss (touch devices). */
+function enableSheetDrag(wrap) {
+  const sheet = $('.sheet', wrap);
+  const handles = [$('.sheet-grab', wrap), $('.sheet-head', wrap)];
+  let startY = null, dy = 0;
+  const onStart = e => { if (e.target.closest('button,a,input')) return; startY = e.touches[0].clientY; dy = 0; wrap.classList.add('dragging'); };
+  const onMove = e => { if (startY == null) return; dy = Math.max(0, e.touches[0].clientY - startY); sheet.style.transform = `translateY(${dy}px)`; };
+  const onEnd = () => {
+    if (startY == null) return;
+    wrap.classList.remove('dragging'); sheet.style.transform = '';
+    if (dy > 110) closeSheet();
+    startY = null;
+  };
+  handles.forEach(h => { h.addEventListener('touchstart', onStart, { passive: true }); h.addEventListener('touchmove', onMove, { passive: true }); h.addEventListener('touchend', onEnd); h.addEventListener('touchcancel', onEnd); });
+}
+
+/* Keep sheets sized to the *visible* area when the iOS keyboard opens. */
+function syncVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vv-h', `${vv.height}px`);
+  document.documentElement.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', syncVisualViewport);
+  visualViewport.addEventListener('scroll', syncVisualViewport);
+  syncVisualViewport();
+}
+
+function setBusy(btn, busy, label) {
+  if (!btn) return;
+  if (busy) { btn.dataset.label = btn.innerHTML; btn.innerHTML = `<span class="spinner"></span>${label ? `<span>${esc(label)}</span>` : ''}`; btn.disabled = true; }
+  else { btn.innerHTML = btn.dataset.label || btn.innerHTML; btn.disabled = false; }
+}
+
+/* =====================================================================
+   SUPABASE: config, client, auth
+   ===================================================================== */
+function getConfig() {
+  if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY) { state.configSource = 'file'; return { url: CONFIG.SUPABASE_URL.trim(), key: CONFIG.SUPABASE_ANON_KEY.trim() }; }
+  try {
+    const c = JSON.parse(localStorage.getItem(LS_CONFIG_KEY) || 'null');
+    if (c && c.url && c.key) { state.configSource = 'device'; return c; }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Reject the secret/service-role key so it is never used in a browser. */
+function looksLikeSecretKey(key) {
+  if (/^sb_secret_/i.test(key)) return true;
+  const parts = key.split('.');
+  if (parts.length === 3) {
+    try {
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (payload.role === 'service_role') return true;
+    } catch { /* not a JWT we can read */ }
+  }
+  return false;
+}
+
+function friendlyError(err) {
+  if (!err) return 'Something went wrong.';
+  const msg = String(err.message || err.error_description || err || '');
+  if (!navigator.onLine) return 'You appear to be offline. Check your internet connection and try again.';
+  if (/Failed to fetch|NetworkError|Load failed|network/i.test(msg)) return 'Could not reach the server. Check your connection and try again.';
+  if (err.code === '23P01') {
+    if (err.hint === 'overlaps_blocked') return 'Those dates overlap blocked dates for this unit.';
+    if (err.hint === 'overlaps_booking') return 'Those dates overlap an existing booking for this unit.';
+    if (/blocked_no_overlap/.test(msg)) return 'Those dates overlap another blocked period for this unit.';
+    return 'Those dates overlap an existing booking for this unit. Another device may have just added it – the calendar has been refreshed.';
+  }
+  if (err.code === '23505') return 'That name is already in use.';
+  if (err.code === '23514') return 'Some values are not valid. Please check the form.';
+  if (err.code === '42501' || /row-level security|permission denied/i.test(msg)) return 'Your account is not allowed to make this change.';
+  if (err.code === 'PGRST301' || /JWT expired|invalid JWT/i.test(msg)) return 'Your session has expired. Please sign in again.';
+  if (/Invalid login credentials/i.test(msg)) return 'Incorrect email or password.';
+  if (/Email not confirmed/i.test(msg)) return 'This email has not been confirmed yet. Confirm it in Supabase (Authentication → Users).';
+  if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
+  return msg || 'Something went wrong.';
+}
+
+let recoveryLink = false;
+async function boot() {
+  // Read this before Supabase consumes the reset-password token from the URL.
+  recoveryLink = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search);
+  const cfg = getConfig();
+  if (!cfg) return showSetup();
+  if (looksLikeSecretKey(cfg.key)) {
+    return showFatal('Wrong key – this is a SECRET key.', 'Use the publishable (anon) key. Never put the secret / service_role key in this website. Replace it in index.html (or Settings) and reload.');
+  }
+  if (!window.supabase || !window.supabase.createClient) {
+    return showFatal('Could not load the Supabase library.', 'Check your internet connection and reload the page.');
+  }
+  try {
+    state.client = window.supabase.createClient(cfg.url, cfg.key, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: 'chico.auth' },
+    });
+  } catch (e) {
+    return showSetup('That Supabase URL or key looks invalid: ' + (e.message || e));
+  }
+
+  state.client.auth.onAuthStateChange((event, session) => {
+    // Supabase recommends not awaiting inside this callback.
+    setTimeout(() => onAuthEvent(event, session), 0);
+  });
+
+  const { data, error } = await state.client.auth.getSession();
+  if (error) console.warn(error);
+  if (recoveryLink) return; // the PASSWORD_RECOVERY event will show the reset form
+  if (data?.session) await enterApp(data.session);
+  else showLogin();
+}
+
+
+let currentEvent = null;
+async function onAuthEvent(event, session) {
+  if (event === currentEvent && event === 'SIGNED_IN' && state.session?.access_token === session?.access_token) return;
+  currentEvent = event;
+  if (event === 'PASSWORD_RECOVERY') { state.session = session; showResetPassword(); return; }
+  if (event === 'SIGNED_OUT') { teardown(); showLogin(); return; }
+  if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') { state.session = session; return; }
+  if (event === 'SIGNED_IN' && session && !state.session) { await enterApp(session); }
+}
+
+let entering = null;
+/** Single-flight: if two auth events arrive together, only one entry runs. */
+function enterApp(session) {
+  if (!entering) entering = doEnterApp(session).finally(() => { entering = null; });
+  return entering;
+}
+async function doEnterApp(session) {
+  state.session = session;
+  showSplash('Checking access…');
+  // Allow-list check (team_members table). Distinguishes "not authorised" from network errors.
+  const { data: member, error } = await state.client.rpc('is_team_member');
+  if (error) {
+    if (/Could not find the function|does not exist/i.test(error.message || '')) {
+      return showFatal('The database is not set up yet.', 'Run supabase-setup.sql in the Supabase SQL Editor, then reload this page.', true);
+    }
+    return showFatal('Could not verify your access.', friendlyError(error), true);
+  }
+  if (!member) return showNotAuthorized();
+  showSplash('Loading bookings…');
+  const ok = await loadAll({ initial: true });
+  if (!ok) return;
+  $('#splash').hidden = true;
+  $('#auth-screen').hidden = true;
+  $('#app').hidden = false;
+  $('#side-email').textContent = session.user?.email || '';
+  subscribeRealtime();
+  route();
+}
+
+function teardown() {
+  if (realtimeChannel && state.client) state.client.removeChannel(realtimeChannel);
+  realtimeChannel = null;
+  state.session = null; state.units = []; state.bookings = []; state.blocks = []; state.loaded = false;
+  closeAllSheets();
+  $('#app').hidden = true;
+}
+
+async function signOut() {
+  const ok = await confirmDialog({ title: 'Sign out?', message: 'You will need your email and password to sign in again.', confirmText: 'Sign out', destructive: true });
+  if (!ok) return;
+  const { error } = await state.client.auth.signOut();
+  if (error) { toast(friendlyError(error), 'error'); return; }
+  teardown(); currentEvent = 'SIGNED_OUT'; showLogin();
+}
+
+/* =====================================================================
+   DATA LAYER
+   ===================================================================== */
+/** Fetch every row of a table, 1000 at a time (PostgREST's default page cap). */
+async function fetchAll(table, orderCol) {
+  const out = [];
+  const size = 1000;
+  for (let from = 0; ; from += size) {
+    const { data, error } = await state.client.from(table).select('*').order(orderCol, { ascending: true }).order('id', { ascending: true }).range(from, from + size - 1);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < size) break;
+  }
+  return out;
+}
+
+async function loadAll({ initial = false, silent = false } = {}) {
+  if (!navigator.onLine && !initial) { setSync('offline'); return false; }
+  setSync('syncing');
+  try {
+    const [units, bookings, blocks] = await Promise.all([
+      fetchAll('units', 'sort_order'),
+      fetchAll('bookings', 'check_in'),
+      fetchAll('blocked_dates', 'start_date'),
+    ]);
+    state.units = units.filter(u => u.is_active !== false);
+    state.bookings = bookings;
+    state.blocks = blocks;
+    state.loaded = true; state.loadError = null; state.lastSync = new Date();
+    setSync('idle');
+    if (!initial) rerender();
+    return true;
+  } catch (e) {
+    console.error(e);
+    state.loadError = friendlyError(e);
+    setSync(navigator.onLine ? 'error' : 'offline');
+    if (initial) showFatal('Could not load your bookings.', state.loadError, true);
+    else if (!silent) toast(state.loadError, 'error');
+    return false;
+  }
+}
+
+/* Refetch shortly after any change from another device (debounced). */
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => loadAll({ silent: true }), 350);
+}
+function subscribeRealtime() {
+  if (realtimeChannel) state.client.removeChannel(realtimeChannel);
+  realtimeChannel = state.client.channel('chico-sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, scheduleRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_dates' }, scheduleRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, scheduleRefresh)
+    .subscribe();
+}
+// Catch up whenever the app comes back to the foreground or back online.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.loaded) scheduleRefresh(); });
+window.addEventListener('online', () => { if (state.loaded) { toast('Back online – syncing'); scheduleRefresh(); } });
+window.addEventListener('offline', () => { if (state.loaded) setSync('offline'); });
+
+function setSync(s) { state.sync = s; $$('.sync').forEach(el => updateSyncEl(el)); }
+function syncHTML() { return `<span class="sync ${state.sync}" role="status"></span>`; }
+function updateSyncEl(el) {
+  el.className = `sync ${state.sync}`;
+  const label = { idle: 'Synced', syncing: 'Syncing…', error: 'Sync error', offline: 'Offline' }[state.sync];
+  el.innerHTML = `<i></i>${label}`;
+  el.title = state.lastSync ? `Last synced ${state.lastSync.toLocaleTimeString()}` : '';
+}
+
+const BOOKING_COLS = ['unit_id', 'platform', 'guest_name', 'guest_count', 'check_in', 'check_out', 'amount', 'notes'];
+const BLOCK_COLS = ['unit_id', 'reason', 'start_date', 'end_date', 'note'];
+const pick = (o, keys) => Object.fromEntries(keys.map(k => [k, o[k]]));
+
+/** Insert or update a row, then update local state from the returned row. */
+async function saveRow(table, id, payload) {
+  setSync('syncing');
+  const q = id
+    ? state.client.from(table).update(payload).eq('id', id).select().single()
+    : state.client.from(table).insert(payload).select().single();
+  const { data, error } = await q;
+  if (error) {
+    setSync('error');
+    if (error.code === '23P01') scheduleRefresh(); // another device probably changed something
+    throw error;
+  }
+  const list = table === 'bookings' ? state.bookings : table === 'blocked_dates' ? state.blocks : state.units;
+  const i = list.findIndex(r => r.id === data.id);
+  if (i >= 0) list[i] = data; else list.push(data);
+  if (table === 'bookings') list.sort((a, b) => a.check_in.localeCompare(b.check_in));
+  if (table === 'blocked_dates') list.sort((a, b) => a.start_date.localeCompare(b.start_date));
+  state.lastSync = new Date(); setSync('idle');
+  return data;
+}
+async function deleteRow(table, id) {
+  setSync('syncing');
+  const { error } = await state.client.from(table).delete().eq('id', id);
+  if (error) { setSync('error'); throw error; }
+  if (table === 'bookings') state.bookings = state.bookings.filter(r => r.id !== id);
+  if (table === 'blocked_dates') state.blocks = state.blocks.filter(r => r.id !== id);
+  state.lastSync = new Date(); setSync('idle');
+}
+
+/* =====================================================================
+   SCREENS: splash, setup, login, reset, not-authorised, fatal
+   ===================================================================== */
+function showSplash(text) {
+  $('#splash-text').textContent = text;
+  $('#splash').hidden = false; $('#auth-screen').hidden = true; $('#app').hidden = true;
+}
+function showAuthScreen(html, onMount) {
+  $('#splash').hidden = true; $('#app').hidden = true;
+  const el = $('#auth-screen');
+  el.hidden = false;
+  el.innerHTML = `<div class="screen-center"><div class="auth-card page-enter">${html}</div></div>`;
+  if (onMount) onMount(el);
+}
+
+function showSetup(errorMsg = '') {
+  showAuthScreen(`
+    <div class="brand-mark">CS</div>
+    <h1>Connect Supabase</h1>
+    <p class="sub">One-time setup on this device. Find these in Supabase → Project Settings → API Keys / Data API.</p>
+    ${errorMsg ? `<div class="form-error" role="alert">${esc(errorMsg)}</div>` : ''}
+    <form id="setup-form" novalidate>
+      <div class="field"><label for="s-url">Project URL</label>
+        <input class="input" id="s-url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://xxxx.supabase.co" required></div>
+      <div class="field"><label for="s-key">Publishable (anon) key</label>
+        <input class="input" id="s-key" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sb_publishable_… or eyJ…" required>
+        <p class="field-hint">Never paste the secret / service_role key.</p></div>
+      <div id="setup-err"></div>
+      <button class="btn block" type="submit">Save and continue</button>
+    </form>`, el => {
+    $('#setup-form', el).addEventListener('submit', e => {
+      e.preventDefault();
+      const url = $('#s-url').value.trim().replace(/\/+$/, '');
+      const key = $('#s-key').value.trim();
+      const errBox = $('#setup-err');
+      let msg = '';
+      if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url) && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) msg = 'Enter the Project URL, e.g. https://abcd1234.supabase.co';
+      else if (key.length < 20) msg = 'Paste the full publishable (anon) key.';
+      else if (looksLikeSecretKey(key)) msg = 'That is a SECRET key. Use the publishable / anon key instead – the secret key must never be used in a website.';
+      if (msg) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(msg)}</div>`; return; }
+      try { localStorage.setItem(LS_CONFIG_KEY, JSON.stringify({ url, key })); } catch { errBox.innerHTML = '<div class="form-error">This browser blocked local storage. Put the values in index.html instead (see README).</div>'; return; }
+      location.reload();
+    });
+  });
+}
+
+function showLogin(message = '') {
+  showAuthScreen(`
+    <div class="brand-mark">CS</div>
+    <h1>Chico Stays</h1>
+    <p class="sub">Sign in to manage your bookings</p>
+    ${message ? `<div class="form-ok">${esc(message)}</div>` : ''}
+    <form id="login-form" novalidate>
+      <div class="field"><label for="l-email">Email</label>
+        <input class="input" id="l-email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" enterkeyhint="next" required></div>
+      <div class="field"><label for="l-pass">Password</label>
+        <input class="input" id="l-pass" type="password" autocomplete="current-password" enterkeyhint="go" required></div>
+      <div id="login-err"></div>
+      <button class="btn block" type="submit" id="login-btn">Sign in</button>
+    </form>
+    <div class="auth-foot"><button class="link-btn" type="button" id="forgot-btn">Forgot password?</button></div>`, el => {
+    const remembered = loadPrefs().lastEmail;
+    if (remembered) $('#l-email').value = remembered;
+    $('#login-form', el).addEventListener('submit', async e => {
+      e.preventDefault();
+      const email = $('#l-email').value.trim().toLowerCase();
+      const password = $('#l-pass').value;
+      const errBox = $('#login-err');
+      errBox.innerHTML = '';
+      if (!email || !password) { errBox.innerHTML = '<div class="form-error" role="alert">Enter your email and password.</div>'; return; }
+      const btn = $('#login-btn');
+      setBusy(btn, true, 'Signing in…');
+      const { data, error } = await state.client.auth.signInWithPassword({ email, password });
+      if (error) { setBusy(btn, false); errBox.innerHTML = `<div class="form-error" role="alert">${esc(friendlyError(error))}</div>`; return; }
+      savePrefs({ lastEmail: email });
+      currentEvent = 'SIGNED_IN';
+      await enterApp(data.session);
+    });
+    $('#forgot-btn', el).addEventListener('click', async () => {
+      const email = $('#l-email').value.trim().toLowerCase();
+      const errBox = $('#login-err');
+      if (!/^\S+@\S+\.\S+$/.test(email)) { errBox.innerHTML = '<div class="form-error" role="alert">Type your email above first, then tap “Forgot password?”.</div>'; return; }
+      const btn = $('#forgot-btn'); btn.disabled = true; btn.textContent = 'Sending…';
+      const redirectTo = location.origin + location.pathname;
+      const { error } = await state.client.auth.resetPasswordForEmail(email, { redirectTo });
+      btn.disabled = false; btn.textContent = 'Forgot password?';
+      errBox.innerHTML = error
+        ? `<div class="form-error" role="alert">${esc(friendlyError(error))}</div>`
+        : '<div class="form-ok">If that email has an account, a reset link is on its way. Open it on this device.</div>';
+    });
+  });
+}
+
+function showResetPassword() {
+  showAuthScreen(`
+    <div class="brand-mark">CS</div>
+    <h1>Set a new password</h1>
+    <p class="sub">Choose a password with at least 8 characters.</p>
+    <form id="reset-form" novalidate>
+      <div class="field"><label for="r-pass">New password</label>
+        <input class="input" id="r-pass" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div class="field"><label for="r-pass2">Confirm password</label>
+        <input class="input" id="r-pass2" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div id="reset-err"></div>
+      <button class="btn block" type="submit" id="reset-btn">Save password</button>
+    </form>`, el => {
+    $('#reset-form', el).addEventListener('submit', async e => {
+      e.preventDefault();
+      const p1 = $('#r-pass').value, p2 = $('#r-pass2').value;
+      const errBox = $('#reset-err');
+      if (p1.length < 8) { errBox.innerHTML = '<div class="form-error">Use at least 8 characters.</div>'; return; }
+      if (p1 !== p2) { errBox.innerHTML = '<div class="form-error">The passwords do not match.</div>'; return; }
+      const btn = $('#reset-btn'); setBusy(btn, true, 'Saving…');
+      const { error } = await state.client.auth.updateUser({ password: p1 });
+      if (error) { setBusy(btn, false); errBox.innerHTML = `<div class="form-error">${esc(friendlyError(error))}</div>`; return; }
+      history.replaceState(null, '', location.pathname + '#/dashboard');
+      toast('Password updated');
+      const { data } = await state.client.auth.getSession();
+      if (data?.session) { state.session = null; await enterApp(data.session); } else showLogin('Password updated. Please sign in.');
+    });
+  });
+}
+
+function showNotAuthorized() {
+  const email = state.session?.user?.email || '';
+  showAuthScreen(`
+    <div class="brand-mark">CS</div>
+    <h1>Access not enabled</h1>
+    <p class="sub">You are signed in as <b>${esc(email)}</b>, but this email is not on the team list yet.</p>
+    <p class="small muted">In Supabase → SQL Editor, run:</p>
+    <div class="code-box">insert into public.team_members (email) values ('${esc(email.toLowerCase())}');</div>
+    <button class="btn block" type="button" id="na-retry">I've added it – try again</button>
+    <div class="auth-foot"><button class="link-btn" type="button" id="na-out">Sign out</button></div>`, el => {
+    $('#na-retry', el).addEventListener('click', () => enterApp(state.session));
+    $('#na-out', el).addEventListener('click', async () => { await state.client.auth.signOut(); teardown(); currentEvent = 'SIGNED_OUT'; showLogin(); });
+  });
+}
+
+function showFatal(title, detail, canRetry = false) {
+  showAuthScreen(`
+    <div class="brand-mark">CS</div>
+    <h1>${esc(title)}</h1>
+    <p class="sub">${esc(detail)}</p>
+    <button class="btn block" type="button" id="fatal-retry">Try again</button>
+    ${state.configSource === 'device' ? '<div class="auth-foot"><button class="link-btn" type="button" id="fatal-reset">Change Supabase connection</button></div>' : ''}
+    ${canRetry && state.session ? '<div class="auth-foot"><button class="link-btn" type="button" id="fatal-out">Sign out</button></div>' : ''}`, el => {
+    $('#fatal-retry', el).addEventListener('click', () => location.reload());
+    $('#fatal-reset', el)?.addEventListener('click', () => { try { localStorage.removeItem(LS_CONFIG_KEY); } catch {} location.reload(); });
+    $('#fatal-out', el)?.addEventListener('click', async () => { await state.client.auth.signOut(); teardown(); currentEvent = 'SIGNED_OUT'; showLogin(); });
+  });
+}
+
+/* =====================================================================
+   ROUTER  (#/dashboard, #/units, #/unit/<id>, #/bookings, #/settings)
+   ===================================================================== */
+const NAV = [
+  { id: 'dashboard', label: 'Dashboard', icon: I.home, href: '#/dashboard' },
+  { id: 'units', label: 'My Units', icon: I.units, href: '#/units' },
+  { id: 'bookings', label: 'Bookings', icon: I.list, href: '#/bookings' },
+  { id: 'settings', label: 'Settings', icon: I.gear, href: '#/settings' },
+];
+function parseRoute() {
+  const h = location.hash;
+  if (!h.startsWith('#/')) return { name: 'dashboard' };
+  const [name, id] = h.slice(2).split('/');
+  if (name === 'unit' && id) return { name: 'unit', id: decodeURIComponent(id) };
+  if (['dashboard', 'units', 'bookings', 'settings'].includes(name)) return { name };
+  return { name: 'dashboard' };
+}
+let lastRouteKey = '';
+function route() {
+  if (!state.loaded) return;
+  const r = parseRoute();
+  const key = r.name + (r.id || '');
+  const changed = key !== lastRouteKey;
+  lastRouteKey = key;
+  closeAllSheets();
+  renderNav(r.name === 'unit' ? 'units' : r.name);
+  renderPage(r, changed);
+  if (changed) window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+function rerender() { if (!state.loaded || $('#app').hidden) return; renderPage(parseRoute(), false); }
+
+function renderNav(active) {
+  const html = NAV.map(n => `<a href="${n.href}" class="${n.id === active ? 'active' : ''}" ${n.id === active ? 'aria-current="page"' : ''}>${n.icon}<span>${n.label}</span></a>`).join('');
+  $('#side-nav').innerHTML = html;
+  $('#tabbar').innerHTML = html;
+}
+
+function renderPage(r, animate) {
+  const main = $('#main');
+  let html = '';
+  if (r.name === 'dashboard') html = viewDashboard();
+  else if (r.name === 'units') html = viewUnits();
+  else if (r.name === 'unit') html = viewUnit(r.id);
+  else if (r.name === 'bookings') html = viewBookings();
+  else if (r.name === 'settings') html = viewSettings();
+  main.innerHTML = `<div class="${animate ? 'page-enter' : ''}">${html}</div>`;
+  $$('.sync', main).forEach(updateSyncEl);
+  if (r.name === 'bookings') bindBookingFilters();
+}
+
+/* =====================================================================
+   VIEWS
+   ===================================================================== */
+function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
+
+function yearStepper(action, y) {
+  return `<div class="stepper-inline" role="group" aria-label="Year">
+    <button class="icon-btn" data-action="${action}" data-delta="-1" aria-label="Previous year">${I.left}</button>
+    <span class="num">${y}</span>
+    <button class="icon-btn" data-action="${action}" data-delta="1" aria-label="Next year">${I.right}</button></div>`;
+}
+
+function statTile(label, value, meta = '', hero = false) {
+  return `<div class="stat ${hero ? 'hero' : ''}"><div class="label">${label}</div><div class="value num">${value}</div>${meta ? `<div class="meta">${meta}</div>` : ''}</div>`;
+}
+
+/* ---------- Dashboard ---------- */
+function viewDashboard() {
+  const y = state.dashYear;
+  const s = yearStats(unitIds(), y, state.bookings, state.blocks);
+  const today = todayISO();
+  const upcoming = state.bookings.filter(b => b.check_out > today).slice(0, 6);
+  return `
+    <div class="page-head">
+      <div class="titles"><div class="eyebrow">${greeting()} · ${esc(formatDate(today, { withYear: true }))}</div><h1>Dashboard</h1></div>
+      <div class="actions">${syncHTML()}</div>
+    </div>
+    <div class="section-head" style="margin-top:4px"><h2>Business summary</h2>${yearStepper('dash-year', y)}</div>
+    <div class="stats">
+      ${statTile(`Gross earnings · ${y}`, formatPHP(s.gross), `${plural(state.units.length, 'unit')} combined`, true)}
+      ${statTile('Bookings', s.count, 'by check-in')}
+      ${statTile('Nights', s.bookedNights, `booked of ${s.openNights}`)}
+      ${statTile('Occupancy', formatPct(s.occupancy), 'excl. blocked')}
+    </div>
+    <div class="section">
+      <div class="section-head"><h2>My units</h2><a class="link-btn" href="#/units">See all</a></div>
+      <div class="unit-grid">${state.units.map(u => unitCard(u, y)).join('') || emptyUnits()}</div>
+    </div>
+    <div class="section">
+      <div class="section-head"><h2>Upcoming stays</h2><a class="link-btn" href="#/bookings">See all</a></div>
+      ${upcoming.length ? `<div class="list">${upcoming.map(b => bookingRow(b, today)).join('')}</div>`
+        : `<div class="card empty"><b>No upcoming stays</b>Tap a unit to add a booking.</div>`}
+    </div>`;
+}
+function emptyUnits() { return `<div class="card empty"><b>No units yet</b>Add one in Settings.</div>`; }
+
+/** Unit card: badge, stats for year y, current-month occupancy, mini calendar of the current month. */
+function unitCard(u, y) {
+  const now = new Date(); const cy = now.getFullYear(), cm = now.getMonth() + 1;
+  const ys = yearStats([u.id], y, state.bookings, state.blocks);
+  const ms = monthStats([u.id], cy, cm, state.bookings, state.blocks);
+  return `
+    <a class="unit-card" href="#/unit/${encodeURIComponent(u.id)}" aria-label="Open ${esc(u.name)} calendar">
+      <div class="unit-top">
+        <div class="unit-badge" style="--ub:${unitTone(u)}">${esc(unitShort(u))}</div>
+        <div><div class="name">${esc(u.name)}</div><div class="sub">${y} overview</div></div>
+        <span class="chev">${I.right.replace('<svg', '<svg width="18" height="18"')}</span>
+      </div>
+      <div class="unit-body">
+        <div>
+          <div class="kv">
+            <div><div class="k">Bookings</div><div class="v num">${ys.count}</div></div>
+            <div><div class="k">Gross</div><div class="v num">${formatPHP(ys.gross)}</div></div>
+            <div><div class="k">Booked nights</div><div class="v num">${ys.bookedNights}</div></div>
+            <div><div class="k">${MONTHS_SHORT[cm - 1]} occupancy</div><div class="v num">${formatPct(ms.occupancy)}</div></div>
+          </div>
+          <div class="occ-bar" aria-hidden="true"><i style="width:${Math.round(ms.occupancy * 100)}%"></i></div>
+        </div>
+        <div class="mini-cal">
+          <div class="mc-title"><span>${MONTHS[cm - 1]}</span><span>${ms.bookedNights}/${ms.totalNights} nights</span></div>
+          ${miniMonth(u.id, cy, cm, false)}
+        </div>
+      </div>
+    </a>`;
+}
+
+/** Compact month grid. interactive=true renders tappable day buttons (year view). */
+function miniMonth(unitId, y, m, interactive) {
+  const start = monthStart(y, m), end = nextMonthStart(y, m);
+  const map = buildDayMap(unitId, start, end, state.bookings, state.blocks);
+  const today = todayISO();
+  let html = `<div class="mini-grid">${['S','M','T','W','T','F','S'].map(d => `<div class="wd">${d}</div>`).join('')}`;
+  for (let i = 0; i < weekday(start); i++) html += '<div></div>';
+  for (let d = start; d < end; d = addDays(d, 1)) {
+    const info = map[d];
+    const dow = weekday(d);
+    const cls = ['md'];
+    if (info.kind === 'booking') cls.push('bk', pClass(info.item.platform));
+    if (info.kind === 'blocked') cls.push('bl');
+    if (info.kind && (info.first || dow === 0)) cls.push('s');
+    if (info.kind && (info.last || dow === 6)) cls.push('e');
+    if (d === today) cls.push('today');
+    else if (d < today) cls.push('past');
+    const n = parseISO(d).d;
+    html += interactive
+      ? `<button type="button" class="${cls.join(' ')}" data-action="day" data-unit="${unitId}" data-date="${d}" aria-label="${esc(dayAria(d, info))}">${n}</button>`
+      : `<div class="${cls.join(' ')}">${n}</div>`;
+  }
+  return html + '</div>';
+}
+function dayAria(d, info) {
+  const base = formatDate(d, { withYear: true });
+  if (info.kind === 'booking') return `${base}: booked – ${info.item.guest_name} (${platformLabel(info.item.platform)})`;
+  if (info.kind === 'blocked') return `${base}: blocked – ${BLOCK_REASONS[info.item.reason] || 'Blocked'}`;
+  return `${base}: available`;
+}
+
+function bookingRow(b, today = todayISO()) {
+  const u = unitById(b.unit_id);
+  const staying = b.check_in <= today && b.check_out > today;
+  const tag = staying ? '<span class="tag now">Staying</span>' : (b.check_in === today ? '<span class="tag">Today</span>' : '');
+  return `
+    <button type="button" class="row ${pClass(b.platform)}" data-action="open-booking" data-id="${b.id}">
+      <span class="rbar"></span>
+      <span class="rmain">
+        <div class="rtitle">${esc(b.guest_name)}${tag}</div>
+        <div class="rsub">${esc(unitShort(u))} · ${esc(formatRange(b.check_in, b.check_out))} · ${esc(PLATFORMS[b.platform]?.short || 'Other')}</div>
+      </span>
+      <span class="rend"><div class="ramt num">${formatPHP(b.amount)}</div><div class="rnights">${plural(b.nights ?? nightsBetween(b.check_in, b.check_out), 'night')}</div></span>
+    </button>`;
+}
+function blockRow(k) {
+  const u = unitById(k.unit_id);
+  const n = diffDays(k.start_date, k.end_date) + 1;
+  return `
+    <button type="button" class="row p-blocked" data-action="open-block" data-id="${k.id}">
+      <span class="rbar"></span>
+      <span class="rmain">
+        <div class="rtitle">${esc(BLOCK_REASONS[k.reason] || 'Blocked')}</div>
+        <div class="rsub">${esc(unitShort(u))} · ${esc(k.start_date === k.end_date ? formatDate(k.start_date) : formatRange(k.start_date, k.end_date))}${k.note ? ' · ' + esc(k.note) : ''}</div>
+      </span>
+      <span class="rend"><div class="rnights">${plural(n, 'night')}</div></span>
+    </button>`;
+}
+
+/* ---------- My Units ---------- */
+function viewUnits() {
+  return `
+    <div class="page-head">
+      <div class="titles"><div class="eyebrow">${plural(state.units.length, 'property', 'properties')}</div><h1>My Units</h1></div>
+      <div class="actions">${yearStepper('dash-year', state.dashYear)}</div>
+    </div>
+    <div class="unit-grid">${state.units.map(u => unitCard(u, state.dashYear)).join('') || emptyUnits()}</div>
+    <div style="margin-top:18px"><button class="btn secondary block" data-action="add-unit" style="max-width:340px">${I.plus.replace('<svg', '<svg width="18" height="18"')}Add a unit</button></div>`;
+}
+
+/* ---------- Unit calendar ---------- */
+function viewUnit(id) {
+  const u = unitById(id);
+  if (!u) return `<div class="card empty"><b>Unit not found</b>It may have been removed. <br><a href="#/units">Back to My Units</a></div>`;
+  if (state.cal.unitId !== id) { const n = new Date(); state.cal = { unitId: id, y: n.getFullYear(), m: n.getMonth() + 1, mode: 'month' }; }
+  const { y, m, mode } = state.cal;
+  const ids = [id];
+  const ys = yearStats(ids, y, state.bookings, state.blocks);
+  const ms = monthStats(ids, y, m, state.bookings, state.blocks);
+  const ytd = ytdGross(ids, y, todayISO(), state.bookings);
+
+  const toolbar = mode === 'month'
+    ? `<div class="cal-toolbar">
+         <button class="cal-title-btn" data-action="month-picker" aria-label="Choose month and year">${MONTHS[m - 1]} ${y}${I.down}</button>
+         <div class="cal-nav">
+           <button class="today-btn" data-action="cal-today">Today</button>
+           <button class="icon-btn" data-action="cal-shift" data-delta="-1" aria-label="Previous month">${I.left}</button>
+           <button class="icon-btn" data-action="cal-shift" data-delta="1" aria-label="Next month">${I.right}</button>
+         </div></div>`
+    : `<div class="cal-toolbar">
+         <span class="cal-title-btn" style="cursor:default">${y}</span>
+         <div class="cal-nav">
+           <button class="today-btn" data-action="cal-today">This year</button>
+           <button class="icon-btn" data-action="cal-shift" data-delta="-12" aria-label="Previous year">${I.left}</button>
+           <button class="icon-btn" data-action="cal-shift" data-delta="12" aria-label="Next year">${I.right}</button>
+         </div></div>`;
+
+  const legend = `<div class="legend">
+      ${Object.entries(PLATFORMS).map(([k, p]) => `<span class="p-${k}"><i class="sw"></i>${p.short}</span>`).join('')}
+      <span><i class="sw blk"></i>Blocked</span><span><i class="sw avail"></i>Available</span></div>`;
+
+  const calendar = mode === 'month'
+    ? `<div class="card cal-card">${monthGrid(id, y, m)}</div>${legend}`
+    : `<div class="year-grid">${Array.from({ length: 12 }, (_, i) => {
+          const st = monthStats(ids, y, i + 1, state.bookings, state.blocks);
+          return `<div class="card year-month"><div class="ym-head"><button data-action="open-month" data-m="${i + 1}">${MONTHS[i]}</button><span class="num">${formatPct(st.occupancy)} · ${formatPHP(st.gross)}</span></div>${miniMonth(id, y, i + 1, true)}</div>`;
+        }).join('')}</div>${legend}`;
+
+  // Monthly revenue bars for the year
+  const monthly = Array.from({ length: 12 }, (_, i) => monthStats(ids, y, i + 1, state.bookings, state.blocks));
+  const maxG = Math.max(1, ...monthly.map(s => s.gross));
+  const bars = `<div class="bars" role="group" aria-label="Gross earnings by month">${monthly.map((s, i) =>
+    `<button data-action="open-month" data-m="${i + 1}" class="${mode === 'month' && i + 1 === m ? 'cur' : ''}" aria-label="${MONTHS[i]}: ${formatPHP(s.gross)}"><i style="height:${Math.round((s.gross / maxG) * 86)}px"></i><small>${MONTHS_SHORT[i][0]}</small></button>`).join('')}</div>`;
+
+  // Stays overlapping the visible month (or year)
+  const pStart = mode === 'month' ? monthStart(y, m) : toISO(y, 1, 1);
+  const pEnd = mode === 'month' ? nextMonthStart(y, m) : toISO(y + 1, 1, 1);
+  const stays = state.bookings.filter(b => b.unit_id === id && rangesOverlap(b.check_in, b.check_out, pStart, pEnd));
+  const blocks = state.blocks.filter(k => k.unit_id === id && rangesOverlap(...blockRange(k), pStart, pEnd));
+  const today = todayISO();
+
+  const monthSummary = `
+    <div class="card card-pad">
+      <div class="sum-title">${MONTHS[m - 1]} ${y}</div>
+      <div class="sum-table">
+        <div class="sum-row"><span class="k">Monthly gross</span><span class="v num">${formatPHP(ms.gross)}</span></div>
+        <div class="sum-row"><span class="k">Bookings (check-ins)</span><span class="v num">${ms.count}</span></div>
+        <div class="sum-row"><span class="k">Booked nights</span><span class="v num">${ms.bookedNights}</span></div>
+        <div class="sum-row"><span class="k">Available nights</span><span class="v num">${ms.availableNights}</span></div>
+        ${ms.blockedNights ? `<div class="sum-row"><span class="k">Blocked nights</span><span class="v num">${ms.blockedNights}</span></div>` : ''}
+        <div class="sum-row"><span class="k">Occupancy</span><span class="v num">${formatPct(ms.occupancy)}</span></div>
+      </div>
+    </div>`;
+  const yearSummary = `
+    <div class="card card-pad">
+      <div class="sum-title">${y} totals</div>
+      <div class="sum-table">
+        <div class="sum-row"><span class="k">Total bookings</span><span class="v num">${ys.count}</span></div>
+        <div class="sum-row"><span class="k">Gross earnings</span><span class="v num">${formatPHP(ys.gross)}</span></div>
+        <div class="sum-row"><span class="k">Year-to-date gross</span><span class="v num">${formatPHP(ytd)}</span></div>
+        <div class="sum-row"><span class="k">Booked nights</span><span class="v num">${ys.bookedNights}</span></div>
+        <div class="sum-row"><span class="k">Available nights</span><span class="v num">${ys.availableNights}</span></div>
+        ${ys.blockedNights ? `<div class="sum-row"><span class="k">Blocked nights</span><span class="v num">${ys.blockedNights}</span></div>` : ''}
+        <div class="sum-row"><span class="k">Occupancy</span><span class="v num">${formatPct(ys.occupancy)}</span></div>
+      </div>
+      <div class="sum-title" style="margin-top:14px">Gross by month</div>
+      ${bars}
+    </div>`;
+
+  return `
+    <div class="back-row"><a class="link-btn" href="#/units">${I.left}My Units</a>${syncHTML()}</div>
+    <div class="page-head" style="margin-top:0">
+      <div class="titles" style="display:flex;align-items:center;gap:12px">
+        <div class="unit-badge" style="--ub:${unitTone(u)}">${esc(unitShort(u))}</div>
+        <div><div class="eyebrow">Booking calendar</div><h1>${esc(u.name)}</h1></div>
+      </div>
+      <div class="actions">
+        <button class="btn plain sm desk-only" data-action="new-block" data-unit="${id}">Block dates</button>
+        <button class="btn sm desk-only" data-action="new-booking" data-unit="${id}">${I.plus.replace('<svg', '<svg width="16" height="16"')}New booking</button>
+      </div>
+    </div>
+    <div class="segmented view-switch" role="tablist" aria-label="Calendar view">
+      <button role="tab" class="${mode === 'month' ? 'on' : ''}" aria-selected="${mode === 'month'}" data-action="cal-mode" data-mode="month">Month</button>
+      <button role="tab" class="${mode === 'year' ? 'on' : ''}" aria-selected="${mode === 'year'}" data-action="cal-mode" data-mode="year">Full year</button>
+    </div>
+    <div class="split">
+      <div>
+        ${toolbar}
+        ${calendar}
+        <div class="section" style="margin-top:22px">
+          <div class="section-head"><h2>${mode === 'month' ? `Stays in ${MONTHS[m - 1]}` : `Stays in ${y}`}</h2>
+            <button class="link-btn" data-action="new-block" data-unit="${id}">Block dates</button></div>
+          ${stays.length || blocks.length
+            ? `<div class="list">${[...stays.map(b => ({ s: b.check_in, h: bookingRow(b, today) })), ...blocks.map(k => ({ s: k.start_date, h: blockRow(k) }))].sort((a, b) => a.s.localeCompare(b.s)).map(x => x.h).join('')}</div>`
+            : `<div class="card empty"><b>No stays yet</b>Tap any open date to add a booking.</div>`}
+        </div>
+      </div>
+      <div style="display:grid;gap:14px">${mode === 'month' ? monthSummary : ''}${yearSummary}</div>
+    </div>
+    <button class="fab" data-action="new-booking" data-unit="${id}" aria-label="New booking">${I.plus}</button>`;
+}
+
+/** Full-size month grid for a unit. */
+function monthGrid(unitId, y, m) {
+  const start = monthStart(y, m), end = nextMonthStart(y, m);
+  const map = buildDayMap(unitId, start, end, state.bookings, state.blocks);
+  const today = todayISO();
+  let html = `<div class="cal-head">${WEEKDAYS_SHORT.map(d => `<div>${d.slice(0, 3)}</div>`).join('')}</div><div class="cal-grid">`;
+  for (let i = 0; i < weekday(start); i++) html += '<div class="cal-day empty-cell"></div>';
+  for (let d = start; d < end; d = addDays(d, 1)) {
+    const info = map[d];
+    const dow = weekday(d);
+    const cls = ['cal-day'];
+    let inner = `<span class="dn">${parseISO(d).d}</span>`;
+    let style = '';
+    if (info.kind === 'booking') {
+      cls.push('bk', pClass(info.item.platform));
+      if (info.first || dow === 0 || d === start) cls.push('s');
+      if (info.last || dow === 6) cls.push('e');
+      inner += '<span class="bar"></span>';
+      if (info.first || dow === 0 || d === start) inner += `<span class="lbl">${esc(firstName(info.item.guest_name))}</span>`;
+    } else if (info.kind === 'blocked') {
+      cls.push('bl');
+      if (info.first || dow === 0 || d === start) { cls.push('s'); inner += `<span class="lbl">${esc(BLOCK_REASONS[info.item.reason] || 'Blocked')}</span>`; }
+      if (info.last || dow === 6) cls.push('e');
+    }
+    // Checkout notch: a guest leaves this morning and no new booking starts here
+    if (info.checkout) {
+      cls.push('co');
+      style = ` style="--co:var(--${PLATFORMS[info.checkout.platform] ? info.checkout.platform : 'other'})"`;
+    }
+    if (d === today) cls.push('today');
+    else if (d < today) cls.push('past');
+    html += `<button type="button" class="${cls.join(' ')}"${style} data-action="day" data-unit="${unitId}" data-date="${d}" aria-label="${esc(dayAria(d, info))}">${inner}</button>`;
+  }
+  return html + '</div>';
+}
+
+/* ---------- Bookings list ---------- */
+function viewBookings() {
+  const f = state.filter;
+  return `
+    <div class="page-head">
+      <div class="titles"><div class="eyebrow">${plural(state.bookings.length, 'booking')} in total</div><h1>Bookings</h1></div>
+      <div class="actions"><button class="btn sm desk-only" data-action="new-booking">${I.plus.replace('<svg', '<svg width="16" height="16"')}New booking</button></div>
+    </div>
+    <div class="filters">
+      <div class="search">${I.search}<input class="input" id="f-q" type="search" placeholder="Search guest or notes" value="${esc(f.q)}" autocomplete="off" enterkeyhint="search" aria-label="Search bookings"></div>
+      <div class="filter-row">
+        <select class="input" id="f-unit" aria-label="Filter by unit"><option value="all">All units</option>${state.units.map(u => `<option value="${u.id}" ${f.unit === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select>
+        <select class="input" id="f-platform" aria-label="Filter by platform"><option value="all">All platforms</option>${Object.entries(PLATFORMS).map(([k, p]) => `<option value="${k}" ${f.platform === k ? 'selected' : ''}>${p.label}</option>`).join('')}</select>
+      </div>
+      <div class="segmented" role="tablist" aria-label="Show">
+        ${[['upcoming', 'Upcoming'], ['past', 'Past'], ['all', 'All'], ['blocked', 'Blocked']].map(([k, l]) => `<button role="tab" data-action="f-status" data-v="${k}" class="${f.status === k ? 'on' : ''}" aria-selected="${f.status === k}">${l}</button>`).join('')}
+      </div>
+    </div>
+    <div id="booking-results">${bookingResults()}</div>
+    <button class="fab" data-action="new-booking" aria-label="New booking">${I.plus}</button>`;
+}
+
+function bookingResults() {
+  const f = state.filter;
+  const today = todayISO();
+  const q = f.q.trim().toLowerCase();
+  if (f.status === 'blocked') {
+    const list = state.blocks.filter(k => (f.unit === 'all' || k.unit_id === f.unit) && (!q || (k.note || '').toLowerCase().includes(q) || (BLOCK_REASONS[k.reason] || '').toLowerCase().includes(q)));
+    if (!list.length) return `<div class="card empty" style="margin-top:16px"><b>No blocked dates</b>Open a unit's calendar and tap “Block dates”.</div>`;
+    return `<div class="group-title"><span>Blocked periods</span><span>${list.length}</span></div><div class="list">${list.map(blockRow).join('')}</div>`;
+  }
+  let list = state.bookings.filter(b =>
+    (f.unit === 'all' || b.unit_id === f.unit) &&
+    (f.platform === 'all' || b.platform === f.platform) &&
+    (f.status === 'all' || (f.status === 'upcoming' ? b.check_out > today : b.check_out <= today)) &&
+    (!q || b.guest_name.toLowerCase().includes(q) || (b.notes || '').toLowerCase().includes(q)));
+  if (f.status === 'past' || f.status === 'all') list = [...list].reverse();
+  if (!list.length) return `<div class="card empty" style="margin-top:16px"><b>No bookings found</b>${f.status === 'upcoming' ? 'Nothing coming up with these filters.' : 'Try different filters.'}</div>`;
+  // Group by check-in month
+  const groups = new Map();
+  for (const b of list) { const k = b.check_in.slice(0, 7); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); }
+  let html = '';
+  for (const [k, items] of groups) {
+    const { y, m } = parseISO(k + '-01');
+    const total = items.reduce((s, b) => s + Number(b.amount || 0), 0);
+    html += `<div class="group-title"><span>${MONTHS[m - 1]} ${y}</span><span class="num">${formatPHP(total)}</span></div><div class="list">${items.map(b => bookingRow(b, today)).join('')}</div>`;
+  }
+  return html;
+}
+function bindBookingFilters() {
+  const upd = () => { $('#booking-results').innerHTML = bookingResults(); };
+  $('#f-q').addEventListener('input', e => { state.filter.q = e.target.value; upd(); });
+  $('#f-unit').addEventListener('change', e => { state.filter.unit = e.target.value; upd(); });
+  $('#f-platform').addEventListener('change', e => { state.filter.platform = e.target.value; upd(); });
+}
+
+/* ---------- Settings ---------- */
+function viewSettings() {
+  const email = state.session?.user?.email || '';
+  const cfg = getConfig();
+  let host = '';
+  try { host = new URL(cfg.url).host; } catch { host = cfg?.url || ''; }
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return `
+    <div class="page-head"><div class="titles"><div class="eyebrow">Chico Stays</div><h1>Settings</h1></div><div class="actions">${syncHTML()}</div></div>
+
+    <div class="settings-group"><h3>Account</h3><div class="list">
+      <div class="srow"><div class="sl"><b>Signed in</b><small>${esc(email)}</small></div></div>
+      <button class="srow danger" data-action="sign-out"><div class="sl"><b>Sign out</b></div></button>
+    </div></div>
+
+    <div class="settings-group"><h3>Units</h3><div class="list">
+      ${state.units.map(u => `<button class="srow" data-action="edit-unit" data-id="${u.id}">
+          <div class="unit-badge" style="--ub:${unitTone(u)};width:34px;height:34px;border-radius:10px;font-size:12px">${esc(unitShort(u))}</div>
+          <div class="sl"><b>${esc(u.name)}</b><small>${plural(state.bookings.filter(b => b.unit_id === u.id).length, 'booking')}</small></div>
+          <div class="sr">Rename${I.right}</div></button>`).join('')}
+      <button class="srow accent" data-action="add-unit"><div class="sl"><b>Add a unit</b></div><div class="sr">${I.plus}</div></button>
+    </div></div>
+
+    <div class="settings-group"><h3>Data &amp; sync</h3><div class="list">
+      <button class="srow" data-action="refresh"><div class="sl"><b>Sync now</b><small id="last-sync">${state.lastSync ? 'Last synced ' + esc(state.lastSync.toLocaleString()) : 'Not synced yet'}</small></div><div class="sr">${I.right}</div></button>
+      <button class="srow" data-action="export-csv"><div class="sl"><b>Export bookings (CSV)</b><small>Opens in Excel, Numbers or Google Sheets</small></div><div class="sr">${I.right}</div></button>
+      <div class="srow"><div class="sl"><b>Database</b><small>${esc(host)} · ${state.configSource === 'file' ? 'set in index.html' : 'saved on this device'}</small></div></div>
+      ${state.configSource === 'device' ? `<button class="srow" data-action="reset-config"><div class="sl"><b>Change Supabase connection</b></div><div class="sr">${I.right}</div></button>` : ''}
+    </div></div>
+
+    <div class="settings-group"><h3>Install on iPhone</h3><div class="list">
+      <div class="srow"><div class="sl"><b>${standalone ? 'Installed – running as an app' : 'Add to Home Screen'}</b><small>${standalone ? 'You are using the Home Screen app.' : 'Open this page in Safari, then:'}</small></div></div>
+      ${standalone ? '' : `<ol class="install-steps"><li>Tap the <b>Share</b> button (square with arrow).</li><li>Choose <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. Open Chico Stays from your Home Screen.</li></ol>`}
+    </div></div>
+
+    <p class="small muted" style="text-align:center;margin-top:8px">Chico Stays v${APP_VERSION} · Amounts in Philippine peso (₱)</p>`;
+}
+
+/* =====================================================================
+   SHEETS: booking detail, booking form, block detail, block form,
+           month picker, unit form
+   ===================================================================== */
+function openBookingDetail(id) {
+  const b = state.bookings.find(x => x.id === id);
+  if (!b) { toast('That booking no longer exists.', 'error'); return; }
+  const u = unitById(b.unit_id);
+  const nights = b.nights ?? nightsBetween(b.check_in, b.check_out);
+  const perNight = nights ? Number(b.amount) / nights : 0;
+  openSheet({
+    title: 'Booking',
+    body: `
+      <div class="detail-hero">
+        <span class="pill ${pClass(b.platform)}"><i class="dot ${pClass(b.platform)}"></i>${esc(platformLabel(b.platform))}</span>
+        <div class="guest">${esc(b.guest_name)}</div>
+        <div class="unit">${esc(u?.name || '')} · ${plural(b.guest_count, 'guest')}</div>
+      </div>
+      <div class="date-pair">
+        <div class="dp"><small>Check-in</small><b>${esc(formatDate(b.check_in))}</b></div>
+        <div class="arrow"><b class="num">${nights}</b>${nights === 1 ? 'night' : 'nights'}</div>
+        <div class="dp"><small>Check-out</small><b>${esc(formatDate(b.check_out))}</b></div>
+      </div>
+      <div class="list" style="box-shadow:none;border:1px solid var(--line);margin-bottom:16px">
+        <div class="srow"><div class="sl"><b>Total amount</b></div><div class="sr num" style="color:var(--text);font-weight:650">${formatPHP(b.amount)}</div></div>
+        <div class="srow"><div class="sl"><b>Per night</b></div><div class="sr num">${formatPHP(perNight)}</div></div>
+      </div>
+      ${b.notes ? `<div class="field-label">Notes</div><div class="notes-box">${esc(b.notes)}</div>` : ''}`,
+    foot: `<button type="button" class="btn danger" data-action="delete-booking" data-id="${b.id}">Delete</button>
+           <button type="button" class="btn" data-action="edit-booking" data-id="${b.id}">Edit</button>`,
+  });
+}
+
+function openBlockDetail(id) {
+  const k = state.blocks.find(x => x.id === id);
+  if (!k) { toast('That block no longer exists.', 'error'); return; }
+  const u = unitById(k.unit_id);
+  const n = diffDays(k.start_date, k.end_date) + 1;
+  openSheet({
+    title: 'Blocked dates',
+    body: `
+      <div class="detail-hero">
+        <span class="pill p-blocked"><i class="dot p-blocked"></i>Blocked</span>
+        <div class="guest">${esc(BLOCK_REASONS[k.reason] || 'Blocked')}</div>
+        <div class="unit">${esc(u?.name || '')}</div>
+      </div>
+      <div class="date-pair">
+        <div class="dp"><small>From</small><b>${esc(formatDate(k.start_date))}</b></div>
+        <div class="arrow"><b class="num">${n}</b>${n === 1 ? 'night' : 'nights'}</div>
+        <div class="dp"><small>Through</small><b>${esc(formatDate(k.end_date))}</b></div>
+      </div>
+      ${k.note ? `<div class="field-label">Note</div><div class="notes-box">${esc(k.note)}</div>` : ''}
+      <p class="small muted" style="margin-top:14px">Blocked nights don't count as bookings or earnings and are excluded from occupancy.</p>`,
+    foot: `<button type="button" class="btn danger" data-action="delete-block" data-id="${k.id}">Remove block</button>
+           <button type="button" class="btn" data-action="edit-block" data-id="${k.id}">Edit</button>`,
+  });
+}
+
+function unitOptions(selected) {
+  return state.units.map(u => `<option value="${u.id}" ${u.id === selected ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
+}
+
+/**
+ * Booking form (create or edit). The segmented control at the top lets
+ * you switch to "Block dates" when creating.
+ */
+function openBookingForm({ id = null, unitId = null, checkIn = null } = {}) {
+  const editing = id ? state.bookings.find(b => b.id === id) : null;
+  if (id && !editing) { toast('That booking no longer exists.', 'error'); return; }
+  const today = todayISO();
+  const ci = editing?.check_in || checkIn || today;
+  const b = editing || { unit_id: unitId || state.cal.unitId || state.units[0]?.id, platform: 'airbnb', guest_name: '', guest_count: 2, check_in: ci, check_out: addDays(ci, 1), amount: '', notes: '' };
+  const amountStr = editing ? String(Number(editing.amount)) : '';
+
+  const wrap = openSheet({
+    title: editing ? 'Edit booking' : 'New booking',
+    form: true,
+    left: '<button type="button" class="link-btn" data-action="close-sheet">Cancel</button>',
+    body: `
+      ${editing ? '' : `<div class="segmented" style="margin-bottom:18px" role="tablist">
+          <button type="button" class="on" role="tab" aria-selected="true">Booking</button>
+          <button type="button" role="tab" aria-selected="false" data-action="switch-to-block" data-unit="${b.unit_id}" data-date="${b.check_in}">Block dates</button></div>`}
+      <div class="field"><label for="bf-unit">Unit</label><select class="input" id="bf-unit" name="unit_id">${unitOptions(b.unit_id)}</select></div>
+      <div class="field"><span class="field-label" id="bf-plat-l">Platform</span>
+        <div class="chips" role="radiogroup" aria-labelledby="bf-plat-l">${Object.entries(PLATFORMS).map(([k, p]) =>
+          `<label class="chip"><input type="radio" name="platform" value="${k}" ${b.platform === k ? 'checked' : ''}><span><i class="dot p-${k}"></i>${p.label}</span></label>`).join('')}</div></div>
+      <div class="field"><label for="bf-guest">Guest name</label>
+        <input class="input" id="bf-guest" name="guest_name" type="text" value="${esc(b.guest_name)}" autocomplete="off" autocapitalize="words" enterkeyhint="next" maxlength="120" placeholder="e.g. Maria Santos" required></div>
+      <div class="field"><label for="bf-count">Number of guests</label>
+        <div class="stepper"><button type="button" data-step="-1" aria-label="Fewer guests">−</button>
+        <input id="bf-count" name="guest_count" type="number" inputmode="numeric" pattern="[0-9]*" min="1" max="50" value="${b.guest_count}">
+        <button type="button" data-step="1" aria-label="More guests">+</button></div></div>
+      <div class="field-row">
+        <div class="field"><label for="bf-in">Check-in</label><input class="input" id="bf-in" name="check_in" type="date" value="${b.check_in}" required></div>
+        <div class="field"><label for="bf-out">Check-out</label><input class="input" id="bf-out" name="check_out" type="date" value="${b.check_out}" min="${addDays(b.check_in, 1)}" required></div>
+      </div>
+      <div id="bf-calc"></div>
+      <div class="field"><label for="bf-amount">Total booking amount</label>
+        <div class="money-wrap"><span class="prefix">₱</span><input class="input num" id="bf-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="0" value="${esc(amountStr)}"></div>
+        <p class="field-hint" id="bf-pernight"></p></div>
+      <div class="field"><label for="bf-notes">Notes <span style="font-weight:400">(optional)</span></label>
+        <textarea class="input" id="bf-notes" name="notes" rows="3" maxlength="2000" placeholder="Arrival time, special requests, contact…">${esc(b.notes || '')}</textarea></div>
+      <div id="bf-err"></div>`,
+    foot: `${editing ? `<button type="button" class="btn danger" data-action="delete-booking" data-id="${editing.id}" style="flex:0 0 auto">Delete</button>` : ''}
+           <button type="submit" class="btn" id="bf-save">${editing ? 'Save changes' : 'Add booking'}</button>`,
+    onMount: w => bindBookingForm(w, editing),
+  });
+  return wrap;
+}
+
+function readBookingForm(form) {
+  return {
+    unit_id: form.unit_id.value,
+    platform: form.platform.value,
+    guest_name: form.guest_name.value.trim(),
+    guest_count: parseInt(form.guest_count.value, 10),
+    check_in: form.check_in.value,
+    check_out: form.check_out.value,
+    amount: parseAmount(form.amount.value),
+    notes: form.notes.value.trim() || null,
+  };
+}
+
+function bindBookingForm(wrap, editing) {
+  const form = $('form.sheet', wrap);
+  const calc = $('#bf-calc', wrap), perNightEl = $('#bf-pernight', wrap), errBox = $('#bf-err', wrap), save = $('#bf-save', wrap);
+  const inEl = form.check_in, outEl = form.check_out;
+
+  // Live: nights, overlap warning, per-night rate
+  const refresh = () => {
+    const p = readBookingForm(form);
+    let html = '';
+    let conflict = null;
+    if (isValidISO(p.check_in) && isValidISO(p.check_out)) {
+      if (p.check_out <= p.check_in) html = `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>Check-out must be after check-in.</span></div>`;
+      else {
+        const n = nightsBetween(p.check_in, p.check_out);
+        conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, state.bookings, state.blocks);
+        html = conflict
+          ? `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>${esc(conflictText(conflict))}${conflict.type === 'booking' ? ' Back-to-back is fine: check in on their check-out day.' : ''}</span></div>`
+          : `<div class="calc-line"><span>${esc(formatRange(p.check_in, p.check_out))}</span><b class="num">${plural(n, 'night')}</b></div>`;
+        const amt = p.amount;
+        perNightEl.textContent = Number.isFinite(amt) && amt > 0 ? `≈ ${formatPHP(amt / n)} per night` : '';
+      }
+    }
+    calc.innerHTML = html;
+    save.disabled = !!conflict;
+  };
+  // Keep check-out after check-in automatically
+  inEl.addEventListener('change', () => {
+    if (isValidISO(inEl.value)) {
+      outEl.min = addDays(inEl.value, 1);
+      if (!isValidISO(outEl.value) || outEl.value <= inEl.value) outEl.value = addDays(inEl.value, 1);
+    }
+    refresh();
+  });
+  ['input', 'change'].forEach(ev => form.addEventListener(ev, e => { if (e.target !== inEl) refresh(); }));
+  $$('.stepper button', wrap).forEach(btn => btn.addEventListener('click', () => {
+    const n = Math.min(50, Math.max(1, (parseInt(form.guest_count.value, 10) || 1) + Number(btn.dataset.step)));
+    form.guest_count.value = n;
+  }));
+  // Pressing "next" on the guest name moves to guests, etc. (keyboard-friendly)
+  form.guest_name.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); form.guest_count.focus(); } });
+  form.amount.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); form.notes.focus(); } });
+  refresh();
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    errBox.innerHTML = '';
+    const p = readBookingForm(form);
+    const v = validateBooking(p);
+    if (v) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(v)}</div>`; errBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
+    const conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, state.bookings, state.blocks);
+    if (conflict) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(conflictText(conflict))}</div>`; return; }
+    setBusy(save, true, 'Saving…');
+    try {
+      const row = await saveRow('bookings', editing?.id, pick(p, BOOKING_COLS));
+      closeAllSheets();
+      toast(editing ? 'Booking updated' : `Booking added · ${plural(row.nights, 'night')}`);
+      rerender();
+    } catch (err) {
+      setBusy(save, false);
+      errBox.innerHTML = `<div class="form-error" role="alert">${esc(friendlyError(err))}</div>`;
+      errBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  });
+}
+
+function conflictText(c) {
+  if (c.type === 'booking') return `Overlaps ${c.item.guest_name}'s booking (${formatRange(c.item.check_in, c.item.check_out)}).`;
+  return `Overlaps blocked dates (${BLOCK_REASONS[c.item.reason] || 'Blocked'}: ${c.item.start_date === c.item.end_date ? formatDate(c.item.start_date) : formatRange(c.item.start_date, c.item.end_date)}).`;
+}
+
+function openBlockForm({ id = null, unitId = null, date = null } = {}) {
+  const editing = id ? state.blocks.find(k => k.id === id) : null;
+  if (id && !editing) { toast('That block no longer exists.', 'error'); return; }
+  const d0 = date || todayISO();
+  const k = editing || { unit_id: unitId || state.cal.unitId || state.units[0]?.id, reason: 'personal', start_date: d0, end_date: d0, note: '' };
+  openSheet({
+    title: editing ? 'Edit blocked dates' : 'Block dates',
+    form: true,
+    left: '<button type="button" class="link-btn" data-action="close-sheet">Cancel</button>',
+    body: `
+      ${editing ? '' : `<div class="segmented" style="margin-bottom:18px" role="tablist">
+          <button type="button" role="tab" aria-selected="false" data-action="switch-to-booking" data-unit="${k.unit_id}" data-date="${k.start_date}">Booking</button>
+          <button type="button" class="on" role="tab" aria-selected="true">Block dates</button></div>`}
+      <div class="field"><label for="kf-unit">Unit</label><select class="input" id="kf-unit" name="unit_id">${unitOptions(k.unit_id)}</select></div>
+      <div class="field"><span class="field-label" id="kf-r-l">Reason</span>
+        <div class="chips" role="radiogroup" aria-labelledby="kf-r-l">${Object.entries(BLOCK_REASONS).map(([key, l]) =>
+          `<label class="chip"><input type="radio" name="reason" value="${key}" ${k.reason === key ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></div>
+      <div class="field-row">
+        <div class="field"><label for="kf-start">First night</label><input class="input" id="kf-start" name="start_date" type="date" value="${k.start_date}" required></div>
+        <div class="field"><label for="kf-end">Last night</label><input class="input" id="kf-end" name="end_date" type="date" value="${k.end_date}" min="${k.start_date}" required></div>
+      </div>
+      <div id="kf-calc"></div>
+      <div class="field"><label for="kf-note">Note <span style="font-weight:400">(optional)</span></label>
+        <input class="input" id="kf-note" name="note" type="text" maxlength="500" value="${esc(k.note || '')}" placeholder="e.g. Aircon cleaning" enterkeyhint="done"></div>
+      <p class="small muted">Both dates are blocked. Blocked nights are not counted as bookings or earnings.</p>
+      <div id="kf-err" style="margin-top:12px"></div>`,
+    foot: `${editing ? `<button type="button" class="btn danger" data-action="delete-block" data-id="${editing.id}" style="flex:0 0 auto">Remove</button>` : ''}
+           <button type="submit" class="btn" id="kf-save">${editing ? 'Save changes' : 'Block dates'}</button>`,
+    onMount: w => bindBlockForm(w, editing),
+  });
+}
+
+function bindBlockForm(wrap, editing) {
+  const form = $('form.sheet', wrap);
+  const calc = $('#kf-calc', wrap), errBox = $('#kf-err', wrap), save = $('#kf-save', wrap);
+  const read = () => ({ unit_id: form.unit_id.value, reason: form.reason.value, start_date: form.start_date.value, end_date: form.end_date.value, note: form.note.value.trim() || null });
+  const refresh = () => {
+    const p = read();
+    let html = '', conflict = null;
+    if (isValidISO(p.start_date) && isValidISO(p.end_date)) {
+      if (p.end_date < p.start_date) html = `<div class="notice warn"><span>The last night can't be before the first.</span></div>`;
+      else {
+        conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, state.bookings, state.blocks);
+        html = conflict
+          ? `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>${esc(conflictText(conflict))}</span></div>`
+          : `<div class="calc-line"><span>${esc(p.start_date === p.end_date ? formatDate(p.start_date) : formatRange(p.start_date, p.end_date))}</span><b class="num">${plural(diffDays(p.start_date, p.end_date) + 1, 'night')}</b></div>`;
+      }
+    }
+    calc.innerHTML = html;
+    save.disabled = !!conflict;
+  };
+  form.start_date.addEventListener('change', () => {
+    if (isValidISO(form.start_date.value)) {
+      form.end_date.min = form.start_date.value;
+      if (!isValidISO(form.end_date.value) || form.end_date.value < form.start_date.value) form.end_date.value = form.start_date.value;
+    }
+    refresh();
+  });
+  ['input', 'change'].forEach(ev => form.addEventListener(ev, e => { if (e.target !== form.start_date) refresh(); }));
+  refresh();
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    errBox.innerHTML = '';
+    const p = read();
+    const v = validateBlock(p);
+    if (v) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(v)}</div>`; return; }
+    const conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, state.bookings, state.blocks);
+    if (conflict) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(conflictText(conflict))}</div>`; return; }
+    setBusy(save, true, 'Saving…');
+    try {
+      await saveRow('blocked_dates', editing?.id, pick(p, BLOCK_COLS));
+      closeAllSheets();
+      toast(editing ? 'Blocked dates updated' : 'Dates blocked');
+      rerender();
+    } catch (err) {
+      setBusy(save, false);
+      errBox.innerHTML = `<div class="form-error" role="alert">${esc(friendlyError(err))}</div>`;
+    }
+  });
+}
+
+function openMonthPicker() {
+  let py = state.cal.y;
+  const render = () => `
+    <div class="mp-year">
+      <button type="button" class="icon-btn" data-mp-year="-1" aria-label="Previous year">${I.left}</button>
+      <span class="num" id="mp-y">${py}</span>
+      <button type="button" class="icon-btn" data-mp-year="1" aria-label="Next year">${I.right}</button>
+    </div>
+    <div class="mp-grid">${MONTHS_SHORT.map((mn, i) => `<button type="button" data-mp-month="${i + 1}" class="${py === state.cal.y && i + 1 === state.cal.m ? 'on' : ''}">${mn}</button>`).join('')}</div>`;
+  openSheet({
+    title: 'Go to month', body: `<div id="mp">${render()}</div>`,
+    onMount: w => {
+      $('#mp', w).addEventListener('click', e => {
+        const yb = e.target.closest('[data-mp-year]');
+        const mb = e.target.closest('[data-mp-month]');
+        if (yb) { py += Number(yb.dataset.mpYear); $('#mp', w).innerHTML = render(); }
+        if (mb) { state.cal.y = py; state.cal.m = Number(mb.dataset.mpMonth); state.cal.mode = 'month'; closeSheet(); rerender(); }
+      });
+    },
+  });
+}
+
+function openUnitForm(id = null) {
+  const u = id ? unitById(id) : null;
+  openSheet({
+    title: u ? 'Rename unit' : 'Add a unit', form: true,
+    left: '<button type="button" class="link-btn" data-action="close-sheet">Cancel</button>',
+    body: `
+      <div class="field"><label for="uf-name">Unit name</label>
+        <input class="input" id="uf-name" name="name" type="text" maxlength="60" value="${esc(u?.name || '')}" placeholder="e.g. BGC 12A" autocapitalize="characters" autocomplete="off" enterkeyhint="done" required></div>
+      <p class="small muted">The short badge uses the name without “BGC”.</p>
+      <div id="uf-err" style="margin-top:12px"></div>`,
+    foot: `<button type="submit" class="btn" id="uf-save">${u ? 'Save' : 'Add unit'}</button>`,
+    onMount: w => {
+      const form = $('form.sheet', w);
+      setTimeout(() => form.name.focus(), 350);
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const name = form.name.value.trim().replace(/\s+/g, ' ');
+        const errBox = $('#uf-err', w);
+        if (!name) { errBox.innerHTML = '<div class="form-error">Enter a unit name.</div>'; return; }
+        if (state.units.some(x => x.id !== id && x.name.toLowerCase() === name.toLowerCase())) { errBox.innerHTML = '<div class="form-error">A unit with that name already exists.</div>'; return; }
+        const btn = $('#uf-save', w); setBusy(btn, true, 'Saving…');
+        try {
+          const payload = u ? { name } : { name, sort_order: Math.max(0, ...state.units.map(x => x.sort_order || 0)) + 1 };
+          await saveRow('units', id, payload);
+          state.units.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name));
+          closeAllSheets(); toast(u ? 'Unit renamed' : 'Unit added'); rerender();
+        } catch (err) { setBusy(btn, false); errBox.innerHTML = `<div class="form-error">${esc(friendlyError(err))}</div>`; }
+      });
+    },
+  });
+}
+
+/* ---------- CSV export ---------- */
+function exportCSV() {
+  const cell = v => {
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // stop spreadsheet formula injection
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = [['Unit', 'Platform', 'Guest name', 'Guests', 'Check-in', 'Check-out', 'Nights', 'Amount (PHP)', 'Notes']];
+  for (const b of state.bookings) rows.push([unitById(b.unit_id)?.name, platformLabel(b.platform), b.guest_name, b.guest_count, b.check_in, b.check_out, b.nights ?? nightsBetween(b.check_in, b.check_out), Number(b.amount).toFixed(2), b.notes]);
+  const csv = '﻿' + rows.map(r => r.map(cell).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `chico-stays-bookings-${todayISO()}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`Exported ${plural(state.bookings.length, 'booking')}`);
+}
+
+/* =====================================================================
+   EVENT DELEGATION — every [data-action] control is handled here
+   ===================================================================== */
+const actions = {
+  'close-sheet': () => closeSheet(),
+  'sign-out': () => signOut(),
+  'dash-year': el => { state.dashYear += Number(el.dataset.delta); rerender(); },
+  'cal-shift': el => { const r = shiftMonth(state.cal.y, state.cal.m, Number(el.dataset.delta)); state.cal.y = r.y; state.cal.m = r.m; rerender(); },
+  'cal-today': () => { const n = new Date(); state.cal.y = n.getFullYear(); state.cal.m = n.getMonth() + 1; rerender(); },
+  'cal-mode': el => { state.cal.mode = el.dataset.mode; rerender(); },
+  'open-month': el => { state.cal.m = Number(el.dataset.m); state.cal.mode = 'month'; rerender(); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+  'month-picker': () => openMonthPicker(),
+  'day': el => {
+    const unitId = el.dataset.unit, d = el.dataset.date;
+    const info = buildDayMap(unitId, d, addDays(d, 1), state.bookings, state.blocks)[d];
+    if (info.kind === 'booking') openBookingDetail(info.item.id);
+    else if (info.kind === 'blocked') openBlockDetail(info.item.id);
+    else openBookingForm({ unitId, checkIn: d });
+  },
+  'new-booking': el => openBookingForm({ unitId: el.dataset.unit || (parseRoute().name === 'unit' ? state.cal.unitId : null) }),
+  'new-block': el => openBlockForm({ unitId: el.dataset.unit }),
+  'switch-to-block': el => { closeSheet(); openBlockForm({ unitId: $('#bf-unit')?.value || el.dataset.unit, date: $('#bf-in')?.value || el.dataset.date }); },
+  'switch-to-booking': el => { closeSheet(); openBookingForm({ unitId: $('#kf-unit')?.value || el.dataset.unit, checkIn: $('#kf-start')?.value || el.dataset.date }); },
+  'open-booking': el => openBookingDetail(el.dataset.id),
+  'open-block': el => openBlockDetail(el.dataset.id),
+  'edit-booking': el => { closeAllSheets(); openBookingForm({ id: el.dataset.id }); },
+  'edit-block': el => { closeAllSheets(); openBlockForm({ id: el.dataset.id }); },
+  'delete-booking': async el => {
+    const b = state.bookings.find(x => x.id === el.dataset.id);
+    if (!b) return;
+    const ok = await confirmDialog({ title: 'Delete this booking?', message: `${b.guest_name} · ${formatRange(b.check_in, b.check_out)}. This can't be undone.`, confirmText: 'Delete', destructive: true });
+    if (!ok) return;
+    setBusy(el, true);
+    try { await deleteRow('bookings', b.id); closeAllSheets(); toast('Booking deleted'); rerender(); }
+    catch (err) { setBusy(el, false); toast(friendlyError(err), 'error'); }
+  },
+  'delete-block': async el => {
+    const k = state.blocks.find(x => x.id === el.dataset.id);
+    if (!k) return;
+    const ok = await confirmDialog({ title: 'Remove blocked dates?', message: 'These dates will become available for booking again.', confirmText: 'Remove', destructive: true });
+    if (!ok) return;
+    setBusy(el, true);
+    try { await deleteRow('blocked_dates', k.id); closeAllSheets(); toast('Block removed'); rerender(); }
+    catch (err) { setBusy(el, false); toast(friendlyError(err), 'error'); }
+  },
+  'f-status': el => { state.filter.status = el.dataset.v; $$('[data-action="f-status"]').forEach(b => { b.classList.toggle('on', b === el); b.setAttribute('aria-selected', b === el); }); $('#booking-results').innerHTML = bookingResults(); },
+  'add-unit': () => openUnitForm(),
+  'edit-unit': el => openUnitForm(el.dataset.id),
+  'refresh': async () => { const ok = await loadAll(); if (ok) toast('Everything is up to date'); },
+  'export-csv': () => exportCSV(),
+  'reset-config': async () => {
+    const ok = await confirmDialog({ title: 'Change Supabase connection?', message: 'You will be signed out on this device.', confirmText: 'Continue', destructive: true });
+    if (!ok) return;
+    try { await state.client.auth.signOut(); } catch {}
+    try { localStorage.removeItem(LS_CONFIG_KEY); } catch {}
+    location.hash = ''; location.reload();
+  },
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el || el.disabled) return;
+  const fn = actions[el.dataset.action];
+  if (!fn) return;
+  e.preventDefault();
+  fn(el, e);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetStack.length && !$('#alert-root').children.length) closeSheet(); });
+
+/* =====================================================================
+   PWA: register the service worker (offline app shell + Home Screen)
+   ===================================================================== */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { /* optional */ }));
+}
+
+boot().catch(err => { console.error(err); showFatal('Something went wrong while starting.', friendlyError(err)); });
+</script>
+</body>
+</html>

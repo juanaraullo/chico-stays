@@ -1,0 +1,4 @@
+# Contains your team email – keep it out of the public repo
+supabase-setup.sql
+.DS_Store
+node_modules/
