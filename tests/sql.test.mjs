@@ -4,7 +4,9 @@ import fs from 'node:fs';
 
 const db = new PGlite({ extensions: { btree_gist } });
 // Like new Supabase projects: NO default table grants, so the script must grant explicitly.
-const setup = fs.readFileSync(process.argv[2], 'utf8').replace(/\('[^']+@[^']+', 'owner'\)/, "('you@example.com', 'owner')")
+const setup = fs.readFileSync(process.argv[2], 'utf8')
+  .replace('create extension if not exists http with schema extensions;', '')
+  .replace('create extension if not exists pg_cron;', '').replace(/\('[^']+@[^']+', 'owner'\)/, "('you@example.com', 'owner')")
   .replace("('you@example.com', 'owner')", "('owner@test.dev', 'owner')");
 
 // ---- minimal Supabase shim ----
@@ -19,6 +21,16 @@ await db.exec(`
     select nullif(auth.jwt()->>'sub','')::uuid $$;
   grant execute on all functions in schema auth to anon, authenticated;
   create publication supabase_realtime;
+  -- fake pgsql-http: responses come from test_http (url -> status, content)
+  create table public.test_http (url text primary key, status int, content text);
+  create type extensions.http_header as (field varchar, value varchar);
+  create type extensions.http_request as (method text, uri varchar, headers extensions.http_header[], content_type varchar, content varchar);
+  create type extensions.http_response as (status int, content_type varchar, headers extensions.http_header[], content varchar);
+  create function extensions.http_header(field varchar, value varchar) returns extensions.http_header language sql as $$ select row(field, value)::extensions.http_header $$;
+  create function extensions.http_set_curlopt(curlopt varchar, value varchar) returns boolean language sql as $$ select true $$;
+  create function extensions.http(r extensions.http_request) returns extensions.http_response language sql as $$
+    select row(coalesce(t.status, 404), 'text/calendar', null, coalesce(t.content, 'not found'))::extensions.http_response
+    from (select 1) one left join public.test_http t on t.url = r.uri $$;
   insert into auth.users values ('11111111-1111-1111-1111-111111111111','owner@test.dev'), ('22222222-2222-2222-2222-222222222222','stranger@test.dev');
 `);
 
@@ -42,7 +54,7 @@ const unit = (await db.query(`select id from units where name='BGC 24J'`)).rows[
 const unit2 = (await db.query(`select id from units where name='BGC 8T'`)).rows[0].id;
 ok((await db.query('select count(*)::int c from units')).rows[0].c === 2, 'units seeded once');
 ok((await db.query('select count(*)::int c from platforms')).rows[0].c === 4, 'platforms seeded once');
-ok((await db.query(`select count(*)::int c from pg_publication_tables where pubname='supabase_realtime'`)).rows[0].c === 4, 'realtime publication has 4 tables');
+ok((await db.query(`select count(*)::int c from pg_publication_tables where pubname='supabase_realtime'`)).rows[0].c === 5, 'realtime publication has 5 tables');
 
 // anon
 let r = await as('anon', null, () => expectErr(db.query('select * from bookings'), '42501'));
@@ -154,6 +166,55 @@ await db.exec(`select set_config('request.jwt.claims', '', false);`);
 await db.query(`update bookings set notes='from dashboard' where id=$1`, [ai.id]);
 ok((await db.query(`select actor from activity_log where entity_id=$1 order by id desc limit 1`, [ai.id])).rows[0].actor === 'Supabase dashboard', 'SQL editor changes credited to "Supabase dashboard"');
 ok((await db.query(`select count(*)::int c from pg_publication_tables where pubname='supabase_realtime' and tablename='activity_log'`)).rows[0].c === 1, 'activity_log in realtime');
+
+// ---- Airbnb iCal sync ----
+const ICS = (events) => ['BEGIN:VCALENDAR', 'PRODID;X-RICAL-TZSOURCE=TZINFO:-//Airbnb Inc//Hosting Calendar 1.0//EN', 'CALSCALE:GREGORIAN', 'VERSION:2.0', ...events, 'END:VCALENDAR'].join('\r\n');
+const RES = (uid, start, end, code, phone) => ['BEGIN:VEVENT', `DTEND;VALUE=DATE:${end}`, `DTSTART;VALUE=DATE:${start}`, `UID:${uid}@airbnb.com`,
+  // long DESCRIPTION folded at 75 chars like Airbnb does
+  ('DESCRIPTION:Reservation URL: https://www.airbnb.com/hosting/reservations/details/' + code + '\\nPhone Number (Last 4 Digits): ' + phone).replace(/(.{75})/g, '$1\r\n '),
+  'SUMMARY:Reserved', 'END:VEVENT'].join('\r\n');
+const BLOCK = (uid, start, end) => ['BEGIN:VEVENT', `DTEND;VALUE=DATE:${end}`, `DTSTART;VALUE=DATE:${start}`, `UID:${uid}@airbnb.com`, 'SUMMARY:Airbnb (Not available)', 'END:VEVENT'].join('\r\n');
+const parsed = (await db.query(`select * from public.parse_ical_events($1)`, [ICS([RES('a1', '20301205', '20301208', 'HMABCD1234', '4321')])])).rows[0];
+ok(parsed && parsed.uid === 'a1@airbnb.com' && parsed.dtstart.toISOString().startsWith('2030-12-05') && parsed.dtend.toISOString().startsWith('2030-12-08'), 'parses Airbnb event dates + uid');
+ok(parsed.description.includes('details/HMABCD1234') && parsed.description.includes('\n'), 'unfolds long lines and unescapes \\n');
+const URL1 = 'https://www.airbnb.com/calendar/ical/111.ics?s=secret';
+await db.query(`insert into test_http values ($1, 200, $2)`, [URL1, ICS([RES('a1', '20301205', '20301208', 'HMABCD1234', '4321'), RES('a2', '20301220', '20301223', 'HMZZZ99999', '0000'), BLOCK('b1', '20301224', '20310102')])]);
+await as('authenticated', 'owner@test.dev', async () => {
+  await db.query(`insert into calendar_feeds (unit_id, url) values ($1, $2)`, [unit, URL1]);
+  const res = (await db.query(`select public.sync_calendar_feeds() r`)).rows[0].r;
+  ok(res[0].ok === true && res[0].reservations === 2, 'sync reads 2 reservations, skips "Not available": ' + JSON.stringify(res));
+  const rows = (await db.query(`select uid, reservation_code, phone_last4, status, to_char(check_in,'YYYY-MM-DD') ci from external_reservations order by check_in`)).rows;
+  ok(rows.length === 2 && rows[0].reservation_code === 'HMABCD1234' && rows[0].phone_last4 === '4321' && rows[0].ci === '2030-12-05', 'reservation code + phone last 4 extracted');
+  let e = await expectErr(db.query(`insert into external_reservations (feed_id, unit_id, uid, check_in, check_out) select id, unit_id, 'x', '2030-01-01', '2030-01-02' from calendar_feeds limit 1`), '42501');
+  ok(e.ok, 'app cannot write reservations directly');
+  ok((await db.query(`select count(*)::int c from activity_log where actor='Airbnb sync' and operation='insert'`)).rows[0].c === 2, 'new reservations logged to history');
+});
+// second sync: a2 cancelled (gone from feed), a1 dates changed
+await db.query(`update test_http set content = $1 where url = $2`, [ICS([RES('a1', '20301206', '20301209', 'HMABCD1234', '4321')]), URL1]);
+await as('authenticated', 'owner@test.dev', async () => {
+  await db.query(`select public.sync_calendar_feeds()`);
+  const rows = (await db.query(`select uid, status, to_char(check_in,'YYYY-MM-DD') ci from external_reservations order by uid`)).rows;
+  ok(rows[0].status === 'active' && rows[0].ci === '2030-12-06', 'changed dates updated, no duplicate');
+  ok(rows[1].status === 'cancelled', 'reservation missing from feed marked cancelled');
+  ok((await db.query(`select count(*)::int c from activity_log where actor='Airbnb sync' and operation='delete'`)).rows[0].c === 1, 'cancellation logged once');
+  await db.query(`select public.sync_calendar_feeds()`);
+  ok((await db.query(`select count(*)::int c from activity_log where actor='Airbnb sync'`)).rows[0].c === 3, 'repeat sync adds no duplicate history');
+});
+// bad link -> error stored, nothing crashes
+await as('authenticated', 'owner@test.dev', async () => {
+  await db.query(`insert into calendar_feeds (unit_id, url) values ($1, 'https://www.airbnb.com/calendar/ical/bad.ics')`, [unit2]);
+  const res = (await db.query(`select public.sync_calendar_feeds() r`)).rows[0].r;
+  const bad = res.find(x => x.ok === false);
+  ok(bad && /HTTP 404/.test(bad.error), 'bad link reported, other feeds still sync: ' + JSON.stringify(res));
+  ok((await db.query(`select last_status from calendar_feeds where unit_id=$1`, [unit2])).rows[0].last_status === 'error', 'error saved on the feed');
+});
+await as('authenticated', 'stranger@test.dev', async () => {
+  ok((await db.query(`select count(*)::int c from calendar_feeds`)).rows[0].c === 0, 'non-member cannot see calendar links');
+  const e = await expectErr(db.query(`select public.sync_calendar_feeds()`), '42501');
+  ok(e.ok, 'non-member cannot trigger sync');
+});
+let eAnon = await as('anon', null, () => expectErr(db.query(`select public.sync_calendar_feeds()`), '42501'));
+ok(eAnon.ok, 'anon cannot trigger sync');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -181,6 +181,24 @@ asks again with one tap.
 
 Your signature (Settings → Signature) is saved on each device. Draw it once per phone or computer.
 
+## Airbnb calendar sync
+
+1. Get each listing's **Export calendar** link in Airbnb:
+   **Listings** → choose the listing → **Availability** → **Connect to another website** / **Sync calendars** → **Export calendar**,
+   then copy the link (`https://www.airbnb.com/calendar/ical/….ics?s=…`).
+2. In Chico Stays, go to **Settings → Airbnb calendars**. Tap the unit → paste the link → **Connect & sync**.
+
+Your database downloads the calendars **every 30 minutes**, or right away with **Sync Airbnb now**.
+Reservations show on the calendar with a **dashed bar** as "Airbnb booking". Airbnb's link has **no guest
+names or payouts**, only the dates, the reservation code and the last 4 digits of the guest's phone.
+Tap one → **Add details** to enter the name and amount, and it becomes a normal booking.
+Reservations you already entered (same dates, or the code in the notes) are not shown twice.
+**Activity** lists new and cancelled reservations, and warns if a booking you saved as Airbnb
+is no longer on Airbnb's calendar.
+Booking a Direct/TikTok guest on dates Airbnb already sold is blocked with a warning.
+
+Keep the links private: anyone with one can see your booked dates. They're stored only in your database.
+
 ## Activity (history, to-dos, checks)
 
 Tap the **bell** on the Dashboard (on a computer, **Activity** in the sidebar).

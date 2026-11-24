@@ -34,6 +34,16 @@
         { id: uid(), unit_id: u1, reason: 'maintenance', start_date: `${ym}-10`, end_date: `${ym}-11`, note: 'Aircon cleaning' },
       ],
       activity_log: [],
+      calendar_feeds: [{ id: 'feed-24j', unit_id: u1, source: 'airbnb', url: 'https://www.airbnb.com/calendar/ical/111.ics?s=test', last_synced_at: new Date(Date.now() - 20 * 60e3).toISOString(), last_status: 'ok', event_count: 2 }],
+      external_reservations: (() => {
+        const nmStart = `${nm}-05`, nmEnd = `${nm}-09`;
+        return [
+          // same stay as Sophie's Airbnb booking -> should be hidden (already entered)
+          { id: uid(), feed_id: 'feed-24j', unit_id: u1, source: 'airbnb', uid: 'r1@airbnb.com', check_in: `${ym}-24`, check_out: `${nm}-02`, reservation_code: 'HMSOPHIE01', phone_last4: '1111', reservation_url: 'https://www.airbnb.com/hosting/reservations/details/HMSOPHIE01', status: 'active' },
+          // a new Airbnb reservation not yet in the app
+          { id: uid(), feed_id: 'feed-24j', unit_id: u1, source: 'airbnb', uid: 'r2@airbnb.com', check_in: nmStart, check_out: nmEnd, reservation_code: 'HMNEW12345', phone_last4: '4321', reservation_url: 'https://www.airbnb.com/hosting/reservations/details/HMNEW12345', status: 'active' },
+        ];
+      })(),
     };
   }
   // Seed history so the Activity page has something realistic to show.
@@ -49,7 +59,7 @@
     d._actId = id;
     return d;
   }
-  const load = () => { try { const d = JSON.parse(localStorage.getItem(DB_KEY)); if (d && !d.activity_log) seedActivity(Object.assign(d, { activity_log: [] })); return d || seedActivity(seed()); } catch { return seedActivity(seed()); } };
+  const load = () => { try { const d = JSON.parse(localStorage.getItem(DB_KEY)); if (d && !d.calendar_feeds) { d.calendar_feeds = []; d.external_reservations = []; } if (d && !d.activity_log) seedActivity(Object.assign(d, { activity_log: [] })); return d || seedActivity(seed()); } catch { return seedActivity(seed()); } };
   const save = db => localStorage.setItem(DB_KEY, JSON.stringify(db));
   let db = load(); save(db);
 
@@ -90,6 +100,7 @@
     order(col, o = {}) { this.orders.push([col, o.ascending !== false]); return this; }
     range(a, b) { this.rng = [a, b]; return this; }
     limit(n) { this.lim = n; return this; }
+    gte(col, v) { this.filters.push([col, v, 'gte']); return this; }
     insert(p) { this.op = 'insert'; this.payload = p; return this; }
     update(p) { this.op = 'update'; this.payload = p; return this; }
     delete() { this.op = 'delete'; return this; }
@@ -103,7 +114,7 @@
       if (!s) return { data: null, error: { code: '42501', message: 'permission denied' } };
       db = load();
       const rows = db[this.table];
-      const match = r => this.filters.every(([c, v]) => r[c] === v);
+      const match = r => this.filters.every(([c, v, op]) => (op === 'gte' ? String(r[c]) >= String(v) : r[c] === v));
       if (this.op === 'select') {
         let out = rows.filter(match);
         for (const [c, asc] of [...this.orders].reverse()) out.sort((a, b) => String(a[c]).localeCompare(String(b[c])) * (asc ? 1 : -1));
@@ -152,7 +163,21 @@
           async resetPasswordForEmail() { await wait(null); return { data: {}, error: null }; },
           async updateUser() { await wait(null); return { data: {}, error: null }; },
         },
-        async rpc(fn) { await wait(null); const s = getSession(); return { data: fn === 'is_team_member' && s?.user?.email === 'owner@test.dev', error: null }; },
+        async rpc(fn, args = {}) {
+          await wait(null, fn === 'sync_calendar_feeds' ? 600 : 120); const s = getSession();
+          if (fn === 'sync_calendar_feeds') {
+            db = load();
+            const out = db.calendar_feeds.filter(f => !args.p_feed || f.id === args.p_feed).map(f => {
+              const unit = db.units.find(u => u.id === f.unit_id)?.name;
+              if (/bad/.test(f.url)) { Object.assign(f, { last_synced_at: new Date().toISOString(), last_status: 'error', last_error: 'Airbnb returned HTTP 404 – check the link is the "Export calendar" link' }); return { unit, ok: false, error: f.last_error }; }
+              const n = db.external_reservations.filter(x => x.feed_id === f.id && x.status === 'active').length;
+              Object.assign(f, { last_synced_at: new Date().toISOString(), last_status: 'ok', last_error: null, event_count: n });
+              return { unit, ok: true, reservations: n };
+            });
+            save(db); return { data: out, error: null };
+          }
+          return { data: fn === 'is_team_member' && s?.user?.email === 'owner@test.dev', error: null };
+        },
         from(t) { return new Query(t); },
         channel() { return { on() { return this; }, subscribe() { return this; } }; },
         removeChannel() {},

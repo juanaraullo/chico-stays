@@ -527,6 +527,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 .bars button:active { opacity: .6; }
 
 .split { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.split > * { min-width: 0; }   /* long one-line texts truncate instead of widening the page */
 @media (min-width: 1000px) { .split { grid-template-columns: 1.6fr 1fr; align-items: start; gap: 20px; } }
 
 .sum-table { width: 100%; }
@@ -578,6 +579,12 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 .done-note b { display: block; color: var(--text); font-size: 17px; margin-bottom: 4px; }
 .mini-seg { max-width: 300px; margin: 4px 0 2px; }
 .mini-seg button { min-height: 32px; font-size: 13px; }
+
+/* Airbnb reservations not yet entered in the app: dashed bar */
+.cal-day.bk.ext .bar { background: repeating-linear-gradient(90deg, var(--pc) 0 7px, transparent 7px 11px); }
+.cal-day.bk.ext { background: color-mix(in srgb, var(--pt) 60%, #fff); }
+.mini-grid .md.bk.ext { background: color-mix(in srgb, var(--pt) 55%, #fff); box-shadow: inset 0 -2px 0 var(--pc); }
+.actor.abnb { background: var(--airbnb-t); color: var(--airbnb); }
 
 /* Guest email page */
 .email-step { margin-bottom: 16px; }
@@ -818,7 +825,7 @@ const EMAIL_CONFIG = {
   DEFAULT_OWNER_MOBILE: '09662775947',
 };
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -1144,6 +1151,9 @@ const state = {
   activityMissing: false,  // true until the activity SQL update has been run
   activityTab: null,       // 'todo' | 'history' | 'updates'
   historyWho: 'all',       // 'all' | 'you' | 'ai'
+  feeds: [],               // calendar_feeds (Airbnb export links, one per unit)
+  external: [],            // external_reservations read from those links
+  airbnbMissing: false,    // true until the Airbnb SQL update has been run
 };
 let realtimeChannel = null;
 let refreshTimer = null;
@@ -1416,6 +1426,7 @@ async function doEnterApp(session) {
   subscribeRealtime();
   route();
   resumeAfterGoogle();
+  maybeAutoSyncAirbnb();
 }
 
 function teardown() {
@@ -1480,7 +1491,7 @@ async function loadAll({ initial = false, silent = false } = {}) {
     state.units = units.filter(u => u.is_active !== false);
     state.bookings = bookings;
     state.blocks = blocks;
-    await loadActivity();
+    await Promise.all([loadActivity(), loadAirbnb()]);
     state.loaded = true; state.loadError = null; state.lastSync = new Date();
     setSync('idle');
     if (!initial) rerender();
@@ -1509,6 +1520,7 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_dates' }, scheduleRefresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, scheduleRefresh)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log' }, scheduleActivityRefresh)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'external_reservations' }, scheduleRefresh)
     .subscribe();
 }
 // Catch up whenever the app comes back to the foreground or back online.
@@ -1807,14 +1819,14 @@ function statTile(label, value, meta = '', hero = false) {
 /* ---------- Dashboard ---------- */
 function viewDashboard() {
   const { y, m } = state.dashMonth;
-  const s = monthStats(unitIds(), y, m, state.bookings, state.blocks);
-  const yearGross = yearStats(unitIds(), y, state.bookings, state.blocks).gross;
+  const s = monthStats(unitIds(), y, m, stays(), state.blocks);
+  const yearGross = yearStats(unitIds(), y, stays(), state.blocks).gross;
   const n = new Date();
   const isCurrent = y === n.getFullYear() && m === n.getMonth() + 1;
   // Per-unit gross for the month, e.g. "24J ₱30,000 · 8T ₱12,000"
-  const perUnit = state.units.map(u => `${esc(unitShort(u))} ${formatPHP(monthStats([u.id], y, m, state.bookings, state.blocks).gross)}`).join(' · ');
+  const perUnit = state.units.map(u => `${esc(unitShort(u))} ${formatPHP(monthStats([u.id], y, m, stays(), state.blocks).gross)}`).join(' · ');
   const today = todayISO();
-  const upcoming = state.bookings.filter(b => b.check_out > today).slice(0, 6);
+  const upcoming = stays().filter(b => b.check_out > today).slice(0, 6);
   return `
     <div class="page-head">
       <div class="titles"><div class="eyebrow">${greeting()} · ${esc(formatDate(today, { withYear: true }))}</div><h1>Dashboard</h1></div>
@@ -1848,8 +1860,8 @@ function emptyUnits() { return `<div class="card empty"><b>No units yet</b>Add o
 /** Unit card: badge, stats for year y, current-month occupancy, mini calendar of the current month. */
 function unitCard(u, y) {
   const now = new Date(); const cy = now.getFullYear(), cm = now.getMonth() + 1;
-  const ys = yearStats([u.id], y, state.bookings, state.blocks);
-  const ms = monthStats([u.id], cy, cm, state.bookings, state.blocks);
+  const ys = yearStats([u.id], y, stays(), state.blocks);
+  const ms = monthStats([u.id], cy, cm, stays(), state.blocks);
   return `
     <a class="unit-card" href="#/unit/${encodeURIComponent(u.id)}" aria-label="Open ${esc(u.name)} calendar">
       <div class="unit-top">
@@ -1878,7 +1890,7 @@ function unitCard(u, y) {
 /** Compact month grid. interactive=true renders tappable day buttons (year view). */
 function miniMonth(unitId, y, m, interactive) {
   const start = monthStart(y, m), end = nextMonthStart(y, m);
-  const map = buildDayMap(unitId, start, end, state.bookings, state.blocks);
+  const map = buildDayMap(unitId, start, end, stays(), state.blocks);
   const today = todayISO();
   let html = `<div class="mini-grid">${['S','M','T','W','T','F','S'].map(d => `<div class="wd">${d}</div>`).join('')}`;
   for (let i = 0; i < weekday(start); i++) html += '<div></div>';
@@ -1886,7 +1898,7 @@ function miniMonth(unitId, y, m, interactive) {
     const info = map[d];
     const dow = weekday(d);
     const cls = ['md'];
-    if (info.kind === 'booking') cls.push('bk', pClass(info.item.platform));
+    if (info.kind === 'booking') cls.push('bk', pClass(info.item.platform), info.item.external ? 'ext' : '');
     if (info.kind === 'blocked') cls.push('bl');
     if (info.kind && (info.first || dow === 0)) cls.push('s');
     if (info.kind && (info.last || dow === 6)) cls.push('e');
@@ -1915,9 +1927,9 @@ function bookingRow(b, today = todayISO()) {
       <span class="rbar"></span>
       <span class="rmain">
         <div class="rtitle">${esc(b.guest_name)}${tag}</div>
-        <div class="rsub">${esc(unitShort(u))} · ${esc(formatRange(b.check_in, b.check_out))} · ${esc(PLATFORMS[b.platform]?.short || 'Other')}</div>
+        <div class="rsub">${esc(unitShort(u))} · ${esc(formatRange(b.check_in, b.check_out))} · ${b.external ? `From Airbnb${b.external.reservation_code ? ' · ' + esc(b.external.reservation_code) : ''}` : esc(PLATFORMS[b.platform]?.short || 'Other')}</div>
       </span>
-      <span class="rend"><div class="ramt num">${formatPHP(b.amount)}</div><div class="rnights">${plural(b.nights ?? nightsBetween(b.check_in, b.check_out), 'night')}</div></span>
+      <span class="rend">${b.external ? '<div class="tag" style="margin:0">Add details</div>' : `<div class="ramt num">${formatPHP(b.amount)}</div>`}<div class="rnights">${plural(b.nights ?? nightsBetween(b.check_in, b.check_out), 'night')}</div></span>
     </button>`;
 }
 function blockRow(k) {
@@ -1952,8 +1964,8 @@ function viewUnit(id) {
   if (state.cal.unitId !== id) { const n = new Date(); state.cal = { unitId: id, y: n.getFullYear(), m: n.getMonth() + 1, mode: 'month' }; }
   const { y, m, mode } = state.cal;
   const ids = [id];
-  const ys = yearStats(ids, y, state.bookings, state.blocks);
-  const ms = monthStats(ids, y, m, state.bookings, state.blocks);
+  const ys = yearStats(ids, y, stays(), state.blocks);
+  const ms = monthStats(ids, y, m, stays(), state.blocks);
   const ytd = ytdGross(ids, y, todayISO(), state.bookings);
 
   const toolbar = mode === 'month'
@@ -1979,12 +1991,12 @@ function viewUnit(id) {
   const calendar = mode === 'month'
     ? `<div class="card cal-card">${monthGrid(id, y, m)}</div>${legend}`
     : `<div class="year-grid">${Array.from({ length: 12 }, (_, i) => {
-          const st = monthStats(ids, y, i + 1, state.bookings, state.blocks);
+          const st = monthStats(ids, y, i + 1, stays(), state.blocks);
           return `<div class="card year-month"><div class="ym-head"><button data-action="open-month" data-m="${i + 1}">${MONTHS[i]}</button><span class="num">${formatPct(st.occupancy)} · ${formatPHP(st.gross)}</span></div>${miniMonth(id, y, i + 1, true)}</div>`;
         }).join('')}</div>${legend}`;
 
   // Monthly revenue bars for the year
-  const monthly = Array.from({ length: 12 }, (_, i) => monthStats(ids, y, i + 1, state.bookings, state.blocks));
+  const monthly = Array.from({ length: 12 }, (_, i) => monthStats(ids, y, i + 1, stays(), state.blocks));
   const maxG = Math.max(1, ...monthly.map(s => s.gross));
   const bars = `<div class="bars" role="group" aria-label="Gross earnings by month">${monthly.map((s, i) =>
     `<button data-action="open-month" data-m="${i + 1}" class="${mode === 'month' && i + 1 === m ? 'cur' : ''}" aria-label="${MONTHS[i]}: ${formatPHP(s.gross)}"><i style="height:${Math.round((s.gross / maxG) * 86)}px"></i><small>${MONTHS_SHORT[i][0]}</small></button>`).join('')}</div>`;
@@ -1992,7 +2004,7 @@ function viewUnit(id) {
   // Stays overlapping the visible month (or year)
   const pStart = mode === 'month' ? monthStart(y, m) : toISO(y, 1, 1);
   const pEnd = mode === 'month' ? nextMonthStart(y, m) : toISO(y + 1, 1, 1);
-  const stays = state.bookings.filter(b => b.unit_id === id && rangesOverlap(b.check_in, b.check_out, pStart, pEnd));
+  const unitStays = stays().filter(b => b.unit_id === id && rangesOverlap(b.check_in, b.check_out, pStart, pEnd));
   const blocks = state.blocks.filter(k => k.unit_id === id && rangesOverlap(...blockRange(k), pStart, pEnd));
   const today = todayISO();
 
@@ -2047,8 +2059,8 @@ function viewUnit(id) {
         <div class="section" style="margin-top:22px">
           <div class="section-head"><h2>${mode === 'month' ? `Stays in ${MONTHS[m - 1]}` : `Stays in ${y}`}</h2>
             <button class="link-btn" data-action="new-block" data-unit="${id}">Block dates</button></div>
-          ${stays.length || blocks.length
-            ? `<div class="list">${[...stays.map(b => ({ s: b.check_in, h: bookingRow(b, today) })), ...blocks.map(k => ({ s: k.start_date, h: blockRow(k) }))].sort((a, b) => a.s.localeCompare(b.s)).map(x => x.h).join('')}</div>`
+          ${unitStays.length || blocks.length
+            ? `<div class="list">${[...unitStays.map(b => ({ s: b.check_in, h: bookingRow(b, today) })), ...blocks.map(k => ({ s: k.start_date, h: blockRow(k) }))].sort((a, b) => a.s.localeCompare(b.s)).map(x => x.h).join('')}</div>`
             : `<div class="card empty"><b>No stays yet</b>Tap any open date to add a booking.</div>`}
         </div>
       </div>
@@ -2060,7 +2072,7 @@ function viewUnit(id) {
 /** Full-size month grid for a unit. */
 function monthGrid(unitId, y, m) {
   const start = monthStart(y, m), end = nextMonthStart(y, m);
-  const map = buildDayMap(unitId, start, end, state.bookings, state.blocks);
+  const map = buildDayMap(unitId, start, end, stays(), state.blocks);
   const today = todayISO();
   let html = `<div class="cal-head">${WEEKDAYS_SHORT.map(d => `<div>${d.slice(0, 3)}</div>`).join('')}</div><div class="cal-grid">`;
   for (let i = 0; i < weekday(start); i++) html += '<div class="cal-day empty-cell"></div>';
@@ -2071,7 +2083,7 @@ function monthGrid(unitId, y, m) {
     let inner = `<span class="dn">${parseISO(d).d}</span>`;
     let style = '';
     if (info.kind === 'booking') {
-      cls.push('bk', pClass(info.item.platform));
+      cls.push('bk', pClass(info.item.platform), info.item.external ? 'ext' : '');
       if (info.first || dow === 0 || d === start) cls.push('s');
       if (info.last || dow === 6) cls.push('e');
       inner += '<span class="bar"></span>';
@@ -2124,7 +2136,7 @@ function bookingResults() {
     if (!list.length) return `<div class="card empty" style="margin-top:16px"><b>No blocked dates</b>Open a unit's calendar and tap “Block dates”.</div>`;
     return `<div class="group-title"><span>Blocked periods</span><span>${list.length}</span></div><div class="list">${list.map(blockRow).join('')}</div>`;
   }
-  let list = state.bookings.filter(b =>
+  let list = stays().filter(b =>
     (f.unit === 'all' || b.unit_id === f.unit) &&
     (f.platform === 'all' || b.platform === f.platform) &&
     (f.status === 'all' || (f.status === 'upcoming' ? b.check_out > today : b.check_out <= today)) &&
@@ -2172,6 +2184,15 @@ function viewSettings() {
       <button class="srow accent" data-action="add-unit"><div class="sl"><b>Add a unit</b></div><div class="sr">${I.plus}</div></button>
     </div></div>
 
+    <div class="settings-group"><h3>Airbnb calendars</h3><div class="list">
+      ${state.airbnbMissing
+        ? '<div class="srow"><div class="sl"><b>Not switched on yet</b><small>Run the latest supabase-setup.sql in the Supabase SQL Editor, then reopen the app.</small></div></div>'
+        : state.units.map(u => { const f = feedFor(u.id); return `<button class="srow" data-action="edit-feed" data-unit="${u.id}">
+            <div class="unit-badge" style="--ub:${unitTone(u)};width:34px;height:34px;border-radius:10px;font-size:12px">${esc(unitShort(u))}</div>
+            <div class="sl"><b>${esc(u.name)}</b><small>${esc(feedStatus(f))}</small></div><div class="sr">${f ? 'Edit' : 'Connect'}${I.right}</div></button>`; }).join('')
+          + (state.feeds.length ? `<button class="srow accent" data-action="airbnb-sync"><div class="sl"><b>Sync Airbnb now</b><small>Also syncs automatically every 30 minutes</small></div><div class="sr">${I.right}</div></button>` : '')}
+    </div></div>
+
     <div class="settings-group"><h3>Guest email</h3><div class="list">
       <button class="srow" data-action="edit-owner"><div class="sl"><b>Your name &amp; mobile</b><small>${esc(loadOwner().name)} · ${esc(loadOwner().mobile)}</small></div><div class="sr">${I.right}</div></button>
       <button class="srow" data-action="edit-signature"><div class="sl"><b>Signature</b><small>${loadOwner().signature ? 'Saved on this device' : 'Not set yet – needed for the Guest Information Sheet'}</small></div><div class="sr">${loadOwner().signature ? `<img class="sig-preview" src="${loadOwner().signature}" alt="">` : ''}${I.right}</div></button>
@@ -2199,6 +2220,7 @@ function viewSettings() {
            month picker, unit form
    ===================================================================== */
 function openBookingDetail(id) {
+  if (String(id).startsWith('ext:')) return openExternalDetail(id.slice(4));
   const b = state.bookings.find(x => x.id === id);
   if (!b) { toast('That booking no longer exists.', 'error'); return; }
   const u = unitById(b.unit_id);
@@ -2261,12 +2283,12 @@ function unitOptions(selected) {
  * Booking form (create or edit). The segmented control at the top lets
  * you switch to "Block dates" when creating.
  */
-function openBookingForm({ id = null, unitId = null, checkIn = null } = {}) {
+function openBookingForm({ id = null, unitId = null, checkIn = null, prefill = null } = {}) {
   const editing = id ? state.bookings.find(b => b.id === id) : null;
   if (id && !editing) { toast('That booking no longer exists.', 'error'); return; }
   const today = todayISO();
   const ci = editing?.check_in || checkIn || today;
-  const b = editing || { unit_id: unitId || state.cal.unitId || state.units[0]?.id, platform: 'airbnb', guest_name: '', guest_count: 2, check_in: ci, check_out: addDays(ci, 1), amount: '', notes: '' };
+  const b = editing || { unit_id: unitId || state.cal.unitId || state.units[0]?.id, platform: 'airbnb', guest_name: '', guest_count: 2, check_in: ci, check_out: addDays(ci, 1), amount: '', notes: '', ...(prefill || {}) };
   const amountStr = editing ? String(Number(editing.amount)) : '';
 
   const wrap = openSheet({
@@ -2332,9 +2354,9 @@ function bindBookingForm(wrap, editing) {
       if (p.check_out <= p.check_in) html = `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>Check-out must be after check-in.</span></div>`;
       else {
         const n = nightsBetween(p.check_in, p.check_out);
-        conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, state.bookings, state.blocks);
+        conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, bookingPool(p.platform), state.blocks);
         html = conflict
-          ? `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>${esc(conflictText(conflict))}${conflict.type === 'booking' ? ' Back-to-back is fine: check in on their check-out day.' : ''}</span></div>`
+          ? `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>${esc(conflictText(conflict))}${conflict.type === 'booking' && !conflict.item.external ? ' Back-to-back is fine: check in on their check-out day.' : ''}</span></div>`
           : `<div class="calc-line"><span>${esc(formatRange(p.check_in, p.check_out))}</span><b class="num">${plural(n, 'night')}</b></div>`;
         const amt = p.amount;
         perNightEl.textContent = Number.isFinite(amt) && amt > 0 ? `≈ ${formatPHP(amt / n)} per night` : '';
@@ -2367,7 +2389,7 @@ function bindBookingForm(wrap, editing) {
     const p = readBookingForm(form);
     const v = validateBooking(p);
     if (v) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(v)}</div>`; errBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); return; }
-    const conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, state.bookings, state.blocks);
+    const conflict = findConflict({ unitId: p.unit_id, start: p.check_in, end: p.check_out, excludeId: editing?.id }, bookingPool(p.platform), state.blocks);
     if (conflict) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(conflictText(conflict))}</div>`; return; }
     setBusy(save, true, 'Saving…');
     try {
@@ -2384,6 +2406,7 @@ function bindBookingForm(wrap, editing) {
 }
 
 function conflictText(c) {
+  if (c.type === 'booking' && c.item.external) return `Airbnb already has a reservation on these dates (${formatRange(c.item.check_in, c.item.check_out)}${c.item.external.reservation_code ? ', ' + c.item.external.reservation_code : ''}). If this IS that guest, choose Airbnb as the platform.`;
   if (c.type === 'booking') return `Overlaps ${c.item.guest_name}'s booking (${formatRange(c.item.check_in, c.item.check_out)}).`;
   return `Overlaps blocked dates (${BLOCK_REASONS[c.item.reason] || 'Blocked'}: ${c.item.start_date === c.item.end_date ? formatDate(c.item.start_date) : formatRange(c.item.start_date, c.item.end_date)}).`;
 }
@@ -2430,7 +2453,7 @@ function bindBlockForm(wrap, editing) {
     if (isValidISO(p.start_date) && isValidISO(p.end_date)) {
       if (p.end_date < p.start_date) html = `<div class="notice warn"><span>The last night can't be before the first.</span></div>`;
       else {
-        conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, state.bookings, state.blocks);
+        conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, stays(), state.blocks);
         html = conflict
           ? `<div class="notice warn">${I.alert.replace('<svg', '<svg width="18" height="18"')}<span>${esc(conflictText(conflict))}</span></div>`
           : `<div class="calc-line"><span>${esc(p.start_date === p.end_date ? formatDate(p.start_date) : formatRange(p.start_date, p.end_date))}</span><b class="num">${plural(diffDays(p.start_date, p.end_date) + 1, 'night')}</b></div>`;
@@ -2454,7 +2477,7 @@ function bindBlockForm(wrap, editing) {
     const p = read();
     const v = validateBlock(p);
     if (v) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(v)}</div>`; return; }
-    const conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, state.bookings, state.blocks);
+    const conflict = findConflict({ unitId: p.unit_id, start: p.start_date, end: addDays(p.end_date, 1), excludeId: editing?.id }, stays(), state.blocks);
     if (conflict) { errBox.innerHTML = `<div class="form-error" role="alert">${esc(conflictText(conflict))}</div>`; return; }
     setBusy(save, true, 'Saving…');
     try {
@@ -2980,6 +3003,7 @@ function openSignatureSheet() {
    ===================================================================== */
 /** What changed in the app itself (newest first). Claude adds a line per update. */
 const CHANGELOG = [
+  { v: '1.5.0', date: '2026-11-25', text: 'Airbnb calendar sync: your Airbnb reservations appear on the calendars and Dashboard as “Airbnb booking” (code + phone last 4). Add details turns them into full bookings; new and cancelled reservations show in Activity.' },
   { v: '1.4.0', date: '2026-11-25', text: 'New Activity page: a history of every booking change (by you or the AI agent), to-dos, and automatic checks for problems.' },
   { v: '1.3.0', date: '2026-11-18', text: 'Guest Email: “New guest” option for guests who aren’t on the calendar yet.' },
   { v: '1.2.0', date: '2026-11-18', text: 'Guest Email tab: fills in the Guest Information Sheet, attaches IDs and signed house rules, and creates a Gmail draft.' },
@@ -2994,6 +3018,7 @@ function actorInfo(a) {
   if (/^(ai agent|claude|.*bot)/i.test(v) || /\bagent\b/i.test(v)) return { label: v, cls: 'ai', ai: true };
   if (!v || v === 'unknown' || v === 'system') return { label: 'Someone', cls: '', ai: false };
   if (v === 'Supabase dashboard') return { label: v, cls: '', ai: false };
+  if (v === 'Airbnb sync') return { label: 'Airbnb', cls: 'abnb', ai: false };
   return { label: v.split('@')[0], cls: '', ai: false };
 }
 function timeAgo(ts) {
@@ -3021,6 +3046,23 @@ function computeChecks() {
     else if (n > 0 && amt / n < 1000) out.push({ ref: `check:low-rate:${b.id}`, tone: 'warn', title: `Low rate for ${b.guest_name}`, message: `${formatPHP(amt / n)} per night (${where}). Check it's the full total, not just a deposit.`, bookingId: b.id });
     if (b.guest_count > EMAIL_CONFIG.MAX_GUESTS) out.push({ ref: `check:guests:${b.id}`, tone: 'warn', title: `${b.guest_count} guests for ${b.guest_name}`, message: `${where}. The Guest Information Sheet only has room for ${EMAIL_CONFIG.MAX_GUESTS} guests.`, bookingId: b.id });
     if (b.check_in >= today && b.check_in <= soon && !emailed.has('booking:' + b.id)) out.push({ ref: `check:email-due:${b.id}`, tone: 'info', title: `Send the guest email for ${b.guest_name}`, message: `Check-in ${b.check_in === today ? 'today' : formatDate(b.check_in)} · ${unitShort(unitById(b.unit_id))}. The building needs the Guest Information Sheet and IDs.`, bookingId: b.id, email: true });
+  }
+  // Airbnb: reservations not yet entered, and app bookings Airbnb no longer shows.
+  for (const x of airbnbPending()) {
+    if (x.check_out < today) continue;
+    out.push({ ref: `check:airbnb-new:${x.id}`, tone: 'info', title: `New Airbnb booking · ${unitShort(unitById(x.unit_id))} · ${formatRange(x.check_in, x.check_out)}`,
+      message: `${x.reservation_code ? 'Reservation ' + x.reservation_code : 'Airbnb reservation'}${x.phone_last4 ? ' · guest phone ends ' + x.phone_last4 : ''}. Add the guest's name and amount.`, extId: x.id });
+  }
+  const synced = new Map(state.feeds.filter(f => f.last_status === 'ok').map(f => [f.unit_id, f]));
+  for (const b of state.bookings) {
+    if (b.platform !== 'airbnb' || b.check_out < today || !synced.has(b.unit_id)) continue;
+    if (new Date(b.created_at) > new Date(synced.get(b.unit_id).last_synced_at)) continue;  // added after the last sync
+    const live = state.external.filter(x => x.unit_id === b.unit_id && x.status === 'active' && (x.reservation_code && (b.notes || '').toUpperCase().includes(x.reservation_code) || rangesOverlap(x.check_in, x.check_out, b.check_in, b.check_out)));
+    if (live.length) continue;
+    const cancelled = state.external.some(x => x.unit_id === b.unit_id && x.status === 'cancelled' && rangesOverlap(x.check_in, x.check_out, b.check_in, b.check_out));
+    out.push({ ref: `check:airbnb-missing:${b.id}:${b.check_in}:${b.check_out}`, tone: 'warn', bookingId: b.id,
+      title: cancelled ? `Airbnb cancelled ${b.guest_name}'s reservation?` : `${b.guest_name} isn't on Airbnb's calendar`,
+      message: `${unitShort(unitById(b.unit_id))} · ${formatRange(b.check_in, b.check_out)} is saved as an Airbnb booking, but Airbnb ${cancelled ? 'removed this reservation' : 'shows no reservation on those dates'}. Check the dates, or delete it if it was cancelled.` });
   }
   return out.filter(c => !dismissed.has(c.ref));
 }
@@ -3068,6 +3110,11 @@ function describeActivity(r) {
     if (r.operation === 'insert') return `added the unit ${row.name}`;
     if (r.operation === 'update' && r.before?.name !== r.after?.name) return `renamed ${r.before?.name} to ${r.after?.name}`;
     return `updated the unit ${row.name}`;
+  }
+  if (r.kind === 'edit' && r.entity === 'airbnb') {
+    const range = row.check_in ? formatRange(row.check_in, row.check_out) : '';
+    const code = row.reservation_code ? ` · ${row.reservation_code}` : '';
+    return r.operation === 'delete' ? `reservation cancelled · ${unit} · ${range}${code}` : `new reservation · ${unit} · ${range}${code}`;
   }
   if (r.kind === 'email') return `created a guest email draft${r.message ? ' · ' + r.message : ''}`;
   if (r.kind === 'dismiss') return `dismissed: ${r.title || 'a check'}`;
@@ -3123,6 +3170,7 @@ function todoCard(t) {
   return `<div class="todo"><span class="ic ${t.tone}">${icon.replace('<svg', '<svg width="18" height="18"')}</span><div class="tb">
       <div class="tt">${esc(t.title)}</div>${t.message ? `<div class="tm">${esc(t.message)}</div>` : ''}<div class="tf">${from}</div>
       <div class="ta">
+        ${t.extId ? `<button class="btn sm" data-action="ext-add" data-id="${t.extId}">${I.plus.replace('<svg', '<svg width="15" height="15"')}Add details</button>` : ''}
         ${t.email ? `<a class="btn sm" href="#/email/${encodeURIComponent(t.bookingId)}">${I.mail.replace('<svg', '<svg width="16" height="16"')}Prepare email</a>` : ''}
         ${b ? `<button class="btn plain sm" data-action="open-booking" data-id="${b.id}">Open booking</button>` : ''}
         ${t.id ? `<button class="btn secondary sm" data-action="todo-done" data-id="${t.id}">${I.check.replace('<svg', '<svg width="15" height="15"')}Done</button>`
@@ -3150,7 +3198,8 @@ function openActivityDetail(id) {
       ${ch.length ? `<div class="list" style="box-shadow:none;border:1px solid var(--line);margin-top:14px">${ch.map(c => `<div class="srow"><div class="sl"><b>${esc(c.label)}</b><small><s>${esc(c.from)}</s> → ${esc(c.to)}</small></div></div>`).join('')}</div>` : ''}
       ${r.message && r.kind !== 'edit' ? `<div class="notes-box" style="margin-top:14px">${esc(r.message)}</div>` : ''}
       ${r.operation === 'delete' ? '<p class="small muted" style="margin-top:14px">This item has been deleted.</p>' : ''}`,
-    foot: b ? `<button type="button" class="btn" data-action="open-booking" data-id="${b.id}">Open booking</button>`
+    foot: r.entity === 'airbnb' && state.external.some(x => x.id === r.entity_id) ? `<button type="button" class="btn" data-action="ext-open" data-id="${r.entity_id}">View reservation</button>`
+        : b ? `<button type="button" class="btn" data-action="open-booking" data-id="${b.id}">Open booking</button>`
         : k ? `<button type="button" class="btn" data-action="open-block" data-id="${k.id}">Open blocked dates</button>`
         : '<button type="button" class="btn plain" data-action="close-sheet">Close</button>',
   });
@@ -3180,6 +3229,149 @@ async function dismissCheck(btn, ref) {
   const row = await logActivity({ kind: 'dismiss', ref, title: c?.title || null });
   if (!row) { setBusy(btn, false); toast('Could not save that – please try again.', 'error'); return; }
   toast('Dismissed'); rerender();
+}
+
+/* =====================================================================
+   AIRBNB CALENDAR SYNC – reservations come from each listing's iCal
+   "Export calendar" link. The database downloads them (every 30 min and
+   on "Sync now"); Airbnb doesn't include guest names, only dates, the
+   reservation code and the last 4 digits of the guest's phone.
+   ===================================================================== */
+async function loadAirbnb() {
+  try {
+    const since = addDays(todayISO(), -120);
+    const [f, x] = await Promise.all([
+      state.client.from('calendar_feeds').select('*'),
+      state.client.from('external_reservations').select('*').gte('check_out', since).order('check_in', { ascending: true }),
+    ]);
+    if (f.error) throw f.error;
+    if (x.error) throw x.error;
+    state.feeds = f.data || []; state.external = x.data || []; state.airbnbMissing = false;
+  } catch (e) {
+    state.feeds = []; state.external = [];
+    state.airbnbMissing = /PGRST205|42P01|schema cache|does not exist/i.test(`${e.code || ''} ${e.message || ''}`);
+    if (!state.airbnbMissing) console.warn('airbnb', e);
+  }
+}
+const feedFor = unitId => state.feeds.find(f => f.unit_id === unitId);
+function feedStatus(f) {
+  if (!f) return 'Not connected';
+  if (!f.last_synced_at) return 'Connected · waiting for first sync';
+  if (f.last_status === 'error') return `Sync problem: ${f.last_error || 'unknown error'}`;
+  return `Synced ${timeAgo(f.last_synced_at)} · ${plural(f.event_count ?? 0, 'reservation')}`;
+}
+/** Is this Airbnb reservation already entered as a booking? (by reservation code in notes, or overlapping Airbnb booking) */
+function matchedBooking(x) {
+  return state.bookings.find(b => b.unit_id === x.unit_id && (
+    (x.reservation_code && (b.notes || '').toUpperCase().includes(x.reservation_code)) ||
+    (b.platform === 'airbnb' && rangesOverlap(b.check_in, b.check_out, x.check_in, x.check_out))));
+}
+const airbnbPending = () => state.external.filter(x => x.status === 'active' && !matchedBooking(x));
+/** Bookings + Airbnb reservations not entered yet (shown as "Airbnb booking", amount unknown). */
+function stays() {
+  const extra = airbnbPending().map(x => ({
+    id: 'ext:' + x.id, unit_id: x.unit_id, platform: 'airbnb', guest_name: 'Airbnb booking', guest_count: null,
+    check_in: x.check_in, check_out: x.check_out, amount: 0, notes: null, nights: nightsBetween(x.check_in, x.check_out), external: x,
+  }));
+  return extra.length ? [...state.bookings, ...extra].sort((a, b) => a.check_in.localeCompare(b.check_in)) : state.bookings;
+}
+/** Airbnb bookings may sit on an Airbnb reservation (that's the same guest); other platforms may not. */
+const bookingPool = platform => (platform === 'airbnb' ? state.bookings : stays());
+
+function openExternalDetail(id) {
+  const x = state.external.find(e => e.id === id);
+  if (!x) { toast('That Airbnb reservation is no longer on the calendar.', 'error'); return; }
+  const u = unitById(x.unit_id), n = nightsBetween(x.check_in, x.check_out), m = matchedBooking(x);
+  openSheet({
+    title: 'Airbnb booking',
+    body: `
+      <div class="detail-hero">
+        <span class="pill p-airbnb"><i class="dot p-airbnb"></i>From your Airbnb calendar</span>
+        <div class="guest">${m ? esc(m.guest_name) : 'Airbnb booking'}</div>
+        <div class="unit">${esc(u?.name || '')}${x.status === 'cancelled' ? ' · <b style="color:var(--danger)">Cancelled on Airbnb</b>' : ''}</div>
+      </div>
+      <div class="date-pair">
+        <div class="dp"><small>Check-in</small><b>${esc(formatDate(x.check_in))}</b></div>
+        <div class="arrow"><b class="num">${n}</b>${n === 1 ? 'night' : 'nights'}</div>
+        <div class="dp"><small>Check-out</small><b>${esc(formatDate(x.check_out))}</b></div>
+      </div>
+      <div class="list" style="box-shadow:none;border:1px solid var(--line);margin-bottom:14px">
+        <div class="srow"><div class="sl"><b>Reservation code</b></div><div class="sr" style="color:var(--text)">${esc(x.reservation_code || '—')}</div></div>
+        <div class="srow"><div class="sl"><b>Guest phone</b></div><div class="sr">${x.phone_last4 ? 'ends in ' + esc(x.phone_last4) : '—'}</div></div>
+      </div>
+      <p class="small muted">${m ? 'Already added as a booking in Chico Stays.' : "Airbnb's calendar link doesn't include guest names or payouts. Tap <b>Add details</b> to add the guest's name and amount – it then counts in your earnings."}</p>`,
+    foot: `${x.reservation_url ? `<a class="btn plain" href="${esc(x.reservation_url)}" target="_blank" rel="noopener">Open in Airbnb</a>` : ''}
+           ${m ? `<button type="button" class="btn" data-action="open-booking" data-id="${m.id}">Open booking</button>`
+               : `<button type="button" class="btn" data-action="ext-add" data-id="${x.id}">${I.plus.replace('<svg', '<svg width="16" height="16"')}Add details</button>`}`,
+  });
+}
+function addDetailsFromExternal(id) {
+  const x = state.external.find(e => e.id === id);
+  if (!x) return;
+  closeAllSheets();
+  const note = `Airbnb ${x.reservation_code || 'reservation'}${x.phone_last4 ? ' · phone ends ' + x.phone_last4 : ''}`;
+  openBookingForm({ unitId: x.unit_id, checkIn: x.check_in, prefill: { unit_id: x.unit_id, platform: 'airbnb', check_in: x.check_in, check_out: x.check_out, notes: note } });
+}
+
+function openFeedSheet(unitId) {
+  const u = unitById(unitId), f = feedFor(unitId);
+  openSheet({
+    title: `Airbnb · ${u?.name || ''}`, form: true,
+    left: '<button type="button" class="link-btn" data-action="close-sheet">Cancel</button>',
+    body: `
+      <p class="small muted" style="margin-bottom:12px">Paste the <b>Export calendar</b> link for this listing. In Airbnb: <b>Listings</b> → choose ${esc(u?.name || 'the listing')} → <b>Availability</b> (or Calendar) → <b>Connect to another website</b> / <b>Sync calendars</b> → <b>Export calendar</b> → copy the link. It looks like <span class="num">https://www.airbnb.com/calendar/ical/…ics?s=…</span></p>
+      <div class="field"><label for="fd-url">Airbnb calendar link</label>
+        <textarea class="input" id="fd-url" name="url" rows="3" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="https://www.airbnb.com/calendar/ical/....ics?s=...">${esc(f?.url || '')}</textarea>
+        <p class="field-hint">Keep this link private – anyone with it can see your booked dates. It's stored in your database only.</p></div>
+      ${f ? `<div class="notice ${f.last_status === 'error' ? 'warn' : 'ok'}"><span>${esc(feedStatus(f))}</span></div>` : ''}
+      <div id="fd-err"></div>`,
+    foot: `${f ? `<button type="button" class="btn danger" id="fd-remove" style="flex:0 0 auto">Remove</button>` : ''}<button type="submit" class="btn" id="fd-save">${f ? 'Save & sync' : 'Connect & sync'}</button>`,
+    onMount: w => {
+      const form = $('form.sheet', w), err = $('#fd-err', w);
+      form.addEventListener('submit', async e => {
+        e.preventDefault();
+        const url = form.url.value.trim();
+        if (!/^https:\/\/(www\.)?airbnb\.[a-z.]+\/calendar\/ical\/[^\s]+$/i.test(url)) {
+          err.innerHTML = '<div class="form-error">That doesn\'t look like an Airbnb calendar link. It should start with https://www.airbnb.com/calendar/ical/</div>'; return;
+        }
+        const btn = $('#fd-save', w); setBusy(btn, true, 'Connecting…');
+        const q = f ? state.client.from('calendar_feeds').update({ url, last_status: null, last_error: null }).eq('id', f.id).select().single()
+                    : state.client.from('calendar_feeds').insert({ unit_id: unitId, url }).select().single();
+        const { data, error } = await q;
+        if (error) { setBusy(btn, false); err.innerHTML = `<div class="form-error">${esc(friendlyError(error))}</div>`; return; }
+        closeAllSheets();
+        await syncAirbnb(null, data.id);
+      });
+      $('#fd-remove', w)?.addEventListener('click', async () => {
+        const ok = await confirmDialog({ title: 'Disconnect this Airbnb calendar?', message: 'Its reservations will disappear from Chico Stays. Bookings you added yourself stay.', confirmText: 'Disconnect', destructive: true });
+        if (!ok) return;
+        const { error } = await state.client.from('calendar_feeds').delete().eq('id', f.id);
+        if (error) { toast(friendlyError(error), 'error'); return; }
+        closeAllSheets(); toast('Airbnb calendar disconnected'); await loadAll();
+      });
+    },
+  });
+}
+/** Ask the database to download the Airbnb calendars now (one feed, or all). */
+async function syncAirbnb(btn, feedId = null) {
+  if (btn) setBusy(btn, true, 'Syncing…');
+  toast('Syncing with Airbnb…');
+  try {
+    const { data, error } = await state.client.rpc('sync_calendar_feeds', feedId ? { p_feed: feedId } : {});
+    if (error) throw error;
+    const bad = (data || []).filter(r => !r.ok);
+    await loadAll({ silent: true });
+    if (bad.length) toast(`${bad.map(b => b.unit).join(', ')}: ${bad[0].error}`, 'error');
+    else toast(`Airbnb synced · ${plural((data || []).reduce((n, r) => n + (r.reservations || 0), 0), 'reservation')}`);
+  } catch (e) {
+    toast(/function .*does not exist|PGRST202/i.test(`${e.code} ${e.message}`) ? 'Run the latest supabase-setup.sql first.' : friendlyError(e), 'error');
+  } finally { if (btn) setBusy(btn, false); }
+}
+/** On opening the app, refresh Airbnb in the background if the last sync is over an hour old. */
+function maybeAutoSyncAirbnb() {
+  if (!state.feeds.length) return;
+  const oldest = Math.min(...state.feeds.map(f => (f.last_synced_at ? new Date(f.last_synced_at).getTime() : 0)));
+  if (Date.now() - oldest > 3600e3) state.client.rpc('sync_calendar_feeds', {}).then(() => loadAll({ silent: true })).catch(() => {});
 }
 
 /* ---------- CSV export ---------- */
@@ -3221,8 +3413,8 @@ const actions = {
   'month-picker': () => openMonthPicker(),
   'day': el => {
     const unitId = el.dataset.unit, d = el.dataset.date;
-    const info = buildDayMap(unitId, d, addDays(d, 1), state.bookings, state.blocks)[d];
-    if (info.kind === 'booking') openBookingDetail(info.item.id);
+    const info = buildDayMap(unitId, d, addDays(d, 1), stays(), state.blocks)[d];
+    if (info.kind === 'booking') info.item.external ? openExternalDetail(info.item.external.id) : openBookingDetail(info.item.id);
     else if (info.kind === 'blocked') openBlockDetail(info.item.id);
     else openBookingForm({ unitId, checkIn: d });
   },
@@ -3265,6 +3457,10 @@ const actions = {
   'todo-done': el => resolveTodo(el, Number(el.dataset.id)),
   'todo-dismiss': el => dismissCheck(el, el.dataset.ref),
   'act-detail': el => openActivityDetail(Number(el.dataset.id)),
+  'edit-feed': el => openFeedSheet(el.dataset.unit),
+  'airbnb-sync': el => syncAirbnb(el),
+  'ext-add': el => addDetailsFromExternal(el.dataset.id),
+  'ext-open': el => openExternalDetail(el.dataset.id),
   'email-add-guest': () => { syncEmailFields(); if (emailState.guests.length < EMAIL_CONFIG.MAX_GUESTS) { emailState.guests.push(''); rerenderEmail(); $$('.guest-row .input').pop()?.focus(); } },
   'email-remove-guest': el => { syncEmailFields(); emailState.guests.splice(Number(el.dataset.i), 1); if (!emailState.guests.length) emailState.guests.push(''); rerenderEmail(); },
   'email-remove-photo': el => { syncEmailFields(); const list = emailState[el.dataset.kind]; const [p] = list.splice(Number(el.dataset.i), 1); if (p) URL.revokeObjectURL(p.url); rerenderEmail(); },
