@@ -825,7 +825,7 @@ const EMAIL_CONFIG = {
   DEFAULT_OWNER_MOBILE: '09662775947',
 };
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -1125,6 +1125,121 @@ async function fillGuestSheet(PDFLib, templateBytes, d) {
     page.drawImage(img, { x: box.x + (box.w - img.width * k) / 2, y: box.y + (box.h - img.height * k) / 2, width: img.width * k, height: img.height * k });
   }
   return pdf.save();
+}
+/* ---------- Airbnb earnings import: CSV + confirmation emails ---------- */
+/** RFC 4180 CSV parser (quotes, commas, CRLF, BOM). Returns rows of strings. */
+function parseCSV(text) {
+  const t = String(text || '').replace(/^﻿/, '');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) {
+      if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ''));
+}
+/** "₱12,125.00" / "PHP 1,234" / "(500.00)" → number (NaN if none). */
+function parseMoney(s) {
+  const str = String(s ?? '').trim();
+  const neg = /^\(.*\)$/.test(str) || /^-|−/.test(str);
+  const t = str.replace(/[^\d.]/g, '');
+  if (!t || t === '.') return NaN;
+  const v = Number(t);
+  return Number.isFinite(v) ? (neg ? -v : v) : NaN;
+}
+const MONTH_IDX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+/** Accepts 2026-12-05, 12/05/2026 (Airbnb US format), "Dec 5, 2026". Returns ISO or null. */
+function parseAnyDate(s) {
+  const t = String(s ?? '').trim();
+  let m;
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/))) return isValidISO(`${m[1]}-${m[2]}-${m[3]}`) ? `${m[1]}-${m[2]}-${m[3]}` : null;
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { const iso = toISO(+m[3], +m[1], +m[2]); return isValidISO(iso) ? iso : null; }
+  if ((m = t.match(/^([A-Za-z]{3})[a-z]*\.? (\d{1,2}),? (\d{4})$/)) && MONTH_IDX[m[1].toLowerCase()]) { const iso = toISO(+m[3], MONTH_IDX[m[1].toLowerCase()], +m[2]); return isValidISO(iso) ? iso : null; }
+  return null;
+}
+/**
+ * Airbnb "Transaction history" CSV → one item per confirmation code
+ * { code, guest, checkIn, checkOut, listing, payout }. payout = sum of the
+ * "Amount" column (your earnings) over all rows with that code.
+ */
+function parseAirbnbCsv(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return { items: [], error: 'The file is empty.' };
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  const col = re => head.findIndex(h => re.test(h));
+  const c = { code: col(/confirmation code/), type: col(/^type$/), guest: col(/^guest/), start: col(/^start date|check-?in/), end: col(/^end date|check-?out/),
+              listing: col(/^listing/), amount: col(/^amount$/), gross: col(/gross earnings/), paid: col(/^paid out$/) };
+  if (c.code < 0) return { items: [], error: 'This file has no "Confirmation code" column. Export it from Airbnb → Earnings → Transaction history.' };
+  if (c.amount < 0 && c.gross < 0) return { items: [], error: 'This file has no "Amount" column.' };
+  const byCode = new Map();
+  for (const r of rows.slice(1)) {
+    const code = (r[c.code] || '').trim().toUpperCase();
+    if (!code) continue;                                   // payout rows have no code
+    if (c.type >= 0 && /payout/i.test(r[c.type] || '')) continue;
+    let amt = c.amount >= 0 ? parseMoney(r[c.amount]) : NaN;
+    if (!Number.isFinite(amt) && c.gross >= 0) amt = parseMoney(r[c.gross]);
+    const it = byCode.get(code) || { code, guest: '', checkIn: null, checkOut: null, listing: '', payout: 0, rows: 0 };
+    if (Number.isFinite(amt)) it.payout = Math.round((it.payout + amt) * 100) / 100;
+    it.rows++;
+    it.guest = it.guest || (c.guest >= 0 ? (r[c.guest] || '').trim() : '');
+    it.checkIn = it.checkIn || (c.start >= 0 ? parseAnyDate(r[c.start]) : null);
+    it.checkOut = it.checkOut || (c.end >= 0 ? parseAnyDate(r[c.end]) : null);
+    it.listing = it.listing || (c.listing >= 0 ? (r[c.listing] || '').trim() : '');
+    byCode.set(code, it);
+  }
+  return { items: [...byCode.values()].map(({ rows: _r, ...x }) => ({ ...x, source: 'CSV' })), error: byCode.size ? null : 'No reservations with a confirmation code were found in this file.' };
+}
+/** Amount that follows a label, e.g. "You earn ₱12,125.00". */
+function moneyAfter(text, labels) {
+  for (const re of labels) {
+    const m = text.match(new RegExp(re.source + '[^\\d₱]{0,40}(?:₱|PHP|P)?\\s?([\\d,]+(?:\\.\\d{2})?)', 'i'));
+    if (m) { const v = parseMoney(m[1]); if (Number.isFinite(v) && v > 0) return v; }
+  }
+  return NaN;
+}
+/** Airbnb host "Reservation confirmed" email → { code, guest, payout, guestPaid } or null. */
+function parseAirbnbEmail({ subject = '', text = '' }) {
+  const body = String(text).replace(/ /g, ' ');
+  const code = (body.match(/\b(HM[A-Z0-9]{8})\b/) || subject.match(/\b(HM[A-Z0-9]{8})\b/) || [])[1];
+  if (!code) return null;
+  const guest = ((subject.match(/(?:reservation|booking) confirmed\s*[-–—:]\s*(.+?)\s+(?:arrives|is arriving|checks in)\b/i) || [])[1] || '').trim();
+  const payout = moneyAfter(body, [/you(?:'|’)?ll earn/, /you earn/, /your payout/, /total payout/, /host payout/]);
+  const guestPaid = moneyAfter(body, [/total \(PHP\)/, /guest paid/]);
+  return { code, guest, payout, guestPaid, source: 'Gmail' };
+}
+/**
+ * Decide what each imported item means for the app.
+ * action: 'same' | 'update' | 'create' | 'unmatched' | 'skip'
+ */
+function planAirbnbImport(items, { bookings, external, listingUnit = {} }) {
+  const near = (a, b) => Math.abs(Number(a) - Number(b)) < 0.5;
+  return items.map(it => {
+    const base = { code: it.code, guest: it.guest, payout: it.payout, source: it.source };
+    if (!Number.isFinite(it.payout) || it.payout <= 0) return { ...base, action: 'skip', reason: 'No payout amount found' };
+    let bk = bookings.find(b => (b.notes || '').toUpperCase().includes(it.code));
+    const x = external.find(e => e.reservation_code === it.code);
+    const unitId = bk?.unit_id || x?.unit_id || listingUnit[it.listing] || null;
+    const ci = x?.check_in || it.checkIn, co = x?.check_out || it.checkOut;
+    if (!bk && unitId && ci && co) bk = bookings.find(b => b.unit_id === unitId && b.platform === 'airbnb' && rangesOverlap(b.check_in, b.check_out, ci, co));
+    if (bk) {
+      const patch = {};
+      if (!near(bk.amount, it.payout)) patch.amount = it.payout;
+      if (it.guest && (!bk.guest_name || /^airbnb (booking|guest)$/i.test(bk.guest_name))) patch.guest_name = it.guest;
+      if (!(bk.notes || '').toUpperCase().includes(it.code)) patch.notes = [bk.notes, `Airbnb ${it.code}`].filter(Boolean).join(' · ');
+      const changesMoney = 'amount' in patch;
+      return { ...base, booking: bk, patch, action: changesMoney || patch.guest_name ? 'update' : (Object.keys(patch).length ? 'update' : 'same'), from: Number(bk.amount) };
+    }
+    if (unitId && ci && co) {
+      return { ...base, action: 'create', create: { unit_id: unitId, platform: 'airbnb', guest_name: it.guest || 'Airbnb guest', guest_count: 1, check_in: ci, check_out: co, amount: it.payout, notes: `Airbnb ${it.code}` } };
+    }
+    return { ...base, listing: it.listing, action: 'unmatched', reason: it.listing ? `Choose which unit “${it.listing}” is` : 'Not on your calendar yet – sync Airbnb, then try again' };
+  });
 }
 // ==LOGIC-END==
 
@@ -1427,6 +1542,7 @@ async function doEnterApp(session) {
   route();
   resumeAfterGoogle();
   maybeAutoSyncAirbnb();
+  if (gmailToken(true)) scanGmailForAirbnb(null, { silent: true });
 }
 
 function teardown() {
@@ -2193,6 +2309,12 @@ function viewSettings() {
           + (state.feeds.length ? `<button class="srow accent" data-action="airbnb-sync"><div class="sl"><b>Sync Airbnb now</b><small>Also syncs automatically every 30 minutes</small></div><div class="sr">${I.right}</div></button>` : '')}
     </div></div>
 
+    <div class="settings-group"><h3>Airbnb earnings</h3><div class="list">
+      <label class="srow file-btn" style="cursor:pointer"><div class="sl"><b>Import Airbnb earnings file</b><small>Airbnb → Earnings → Transaction history → Export CSV</small></div><div class="sr">${I.right}</div><input type="file" id="abnb-csv" accept=".csv,text/csv"></label>
+      <button class="srow" data-action="gmail-scan"><div class="sl"><b>Check Gmail for Airbnb bookings</b><small>Reads “Reservation confirmed” emails for guest names and payouts</small></div><div class="sr">${I.right}</div></button>
+      <div class="srow"><div class="sl"><small>Earnings use your <b>Airbnb payout</b> (after Airbnb's host fee). You always see a preview before anything changes.</small></div></div>
+    </div></div>
+
     <div class="settings-group"><h3>Guest email</h3><div class="list">
       <button class="srow" data-action="edit-owner"><div class="sl"><b>Your name &amp; mobile</b><small>${esc(loadOwner().name)} · ${esc(loadOwner().mobile)}</small></div><div class="sr">${I.right}</div></button>
       <button class="srow" data-action="edit-signature"><div class="sl"><b>Signature</b><small>${loadOwner().signature ? 'Saved on this device' : 'Not set yet – needed for the Guest Information Sheet'}</small></div><div class="sr">${loadOwner().signature ? `<img class="sig-preview" src="${loadOwner().signature}" alt="">` : ''}${I.right}</div></button>
@@ -2810,8 +2932,12 @@ async function previewGuestSheet(btn) {
 /* ---------- Gmail (OAuth implicit flow + Gmail API drafts) ---------- */
 const GTOKEN_KEY = 'chico.gmail.token', GOAUTH_KEY = 'chico.gmail.oauth', GSTASH_KEY = 'pending-email';
 let pendingGoogle = null;   // { resume, error } set when we come back from Google
-function gmailToken() {
-  try { const t = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null'); if (t && t.exp > Date.now() + 60000) return t.token; } catch { /* ignore */ }
+/** Current Google token. needRead = must include read access (for scanning Airbnb emails). */
+function gmailToken(needRead = false) {
+  try {
+    const t = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null');
+    if (t && t.exp > Date.now() + 60000 && (!needRead || /gmail\.readonly/.test(t.scope || ''))) return t.token;
+  } catch { /* ignore */ }
   return null;
 }
 function oauthRedirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
@@ -2825,18 +2951,19 @@ function captureGoogleRedirect() {
   sessionStorage.removeItem(GOAUTH_KEY);
   if (saved && saved.state === p.get('state')) {
     if (p.get('access_token')) {
-      try { sessionStorage.setItem(GTOKEN_KEY, JSON.stringify({ token: p.get('access_token'), exp: Date.now() + Number(p.get('expires_in') || 3600) * 1000 })); } catch { /* ignore */ }
-      pendingGoogle = { resume: !!saved.resume };
+      try { sessionStorage.setItem(GTOKEN_KEY, JSON.stringify({ token: p.get('access_token'), scope: p.get('scope') || '', exp: Date.now() + Number(p.get('expires_in') || 3600) * 1000 })); } catch { /* ignore */ }
+      pendingGoogle = { resume: !!saved.resume, after: saved.after || null };
     } else pendingGoogle = { error: p.get('error') || 'unknown' };
   }
   history.replaceState(null, '', location.pathname + location.search + (saved?.route || '#/email'));
 }
-async function connectGmail({ resume }) {
+async function connectGmail({ resume, after = null }) {
   const st = 'chico_g_' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
-  try { sessionStorage.setItem(GOAUTH_KEY, JSON.stringify({ state: st, route: location.hash || '#/email', resume })); } catch { /* ignore */ }
+  try { sessionStorage.setItem(GOAUTH_KEY, JSON.stringify({ state: st, route: location.hash || '#/email', resume, after })); } catch { /* ignore */ }
   const q = new URLSearchParams({
     client_id: EMAIL_CONFIG.GOOGLE_CLIENT_ID, redirect_uri: oauthRedirectUri(), response_type: 'token',
-    scope: 'https://www.googleapis.com/auth/gmail.compose', include_granted_scopes: 'true',
+    // compose = create guest-email drafts; readonly = read Airbnb confirmation emails for payouts & guest names
+    scope: 'https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly', include_granted_scopes: 'true',
     login_hint: EMAIL_CONFIG.GMAIL_ACCOUNT, state: st,
   });
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
@@ -2866,6 +2993,7 @@ async function resumeAfterGoogle() {
   }
   if (p.error) { toast(p.error === 'access_denied' ? 'Gmail access was not allowed.' : 'Gmail sign-in failed – please try again.', 'error'); return; }
   toast('Gmail connected');
+  if (p.after === 'scan') { setTimeout(() => scanGmailForAirbnb(null), 300); return; }
   if (p.resume && stash) setTimeout(() => createGmailDraft($('[data-action="email-create-draft"]')), 300);
 }
 
@@ -3003,6 +3131,7 @@ function openSignatureSheet() {
    ===================================================================== */
 /** What changed in the app itself (newest first). Claude adds a line per update. */
 const CHANGELOG = [
+  { v: '1.6.0', date: '2026-11-25', text: 'Airbnb earnings: import your Airbnb earnings CSV or check Gmail for “Reservation confirmed” emails to fill in payouts and guest names (with a preview before anything changes).' },
   { v: '1.5.0', date: '2026-11-25', text: 'Airbnb calendar sync: your Airbnb reservations appear on the calendars and Dashboard as “Airbnb booking” (code + phone last 4). Add details turns them into full bookings; new and cancelled reservations show in Activity.' },
   { v: '1.4.0', date: '2026-11-25', text: 'New Activity page: a history of every booking change (by you or the AI agent), to-dos, and automatic checks for problems.' },
   { v: '1.3.0', date: '2026-11-18', text: 'Guest Email: “New guest” option for guests who aren’t on the calendar yet.' },
@@ -3052,6 +3181,11 @@ function computeChecks() {
     if (x.check_out < today) continue;
     out.push({ ref: `check:airbnb-new:${x.id}`, tone: 'info', title: `New Airbnb booking · ${unitShort(unitById(x.unit_id))} · ${formatRange(x.check_in, x.check_out)}`,
       message: `${x.reservation_code ? 'Reservation ' + x.reservation_code : 'Airbnb reservation'}${x.phone_last4 ? ' · guest phone ends ' + x.phone_last4 : ''}. Add the guest's name and amount.`, extId: x.id });
+  }
+  if (state.gmailItems?.length) {
+    const actionable = planAirbnbImport(state.gmailItems, { bookings: state.bookings, external: state.external, listingUnit: loadListingUnits() }).filter(x => x.action === 'update' || x.action === 'create');
+    if (actionable.length) out.push({ ref: `check:gmail-payouts:${actionable.map(a => a.code).sort().join(',')}`, tone: 'info',
+      title: `${plural(actionable.length, 'Airbnb booking')} to update from Gmail`, message: 'Guest names and payouts were found in Airbnb confirmation emails. Review them before they’re applied.', reviewGmail: true });
   }
   const synced = new Map(state.feeds.filter(f => f.last_status === 'ok').map(f => [f.unit_id, f]));
   for (const b of state.bookings) {
@@ -3170,6 +3304,7 @@ function todoCard(t) {
   return `<div class="todo"><span class="ic ${t.tone}">${icon.replace('<svg', '<svg width="18" height="18"')}</span><div class="tb">
       <div class="tt">${esc(t.title)}</div>${t.message ? `<div class="tm">${esc(t.message)}</div>` : ''}<div class="tf">${from}</div>
       <div class="ta">
+        ${t.reviewGmail ? `<button class="btn sm" data-action="review-gmail">Review</button>` : ''}
         ${t.extId ? `<button class="btn sm" data-action="ext-add" data-id="${t.extId}">${I.plus.replace('<svg', '<svg width="15" height="15"')}Add details</button>` : ''}
         ${t.email ? `<a class="btn sm" href="#/email/${encodeURIComponent(t.bookingId)}">${I.mail.replace('<svg', '<svg width="16" height="16"')}Prepare email</a>` : ''}
         ${b ? `<button class="btn plain sm" data-action="open-booking" data-id="${b.id}">Open booking</button>` : ''}
@@ -3374,6 +3509,165 @@ function maybeAutoSyncAirbnb() {
   if (Date.now() - oldest > 3600e3) state.client.rpc('sync_calendar_feeds', {}).then(() => loadAll({ silent: true })).catch(() => {});
 }
 
+/* =====================================================================
+   AIRBNB EARNINGS – import payouts (and guest names) from Airbnb's CSV
+   export or from "Reservation confirmed" emails in Gmail. Every change is
+   shown in a preview first; nothing is applied until you tap Apply.
+   ===================================================================== */
+const LISTING_KEY = 'chico.listingUnits';
+function loadListingUnits() { try { return JSON.parse(localStorage.getItem(LISTING_KEY) || '{}'); } catch { return {}; } }
+function saveListingUnit(listing, unitId) { const m = loadListingUnits(); if (unitId) m[listing] = unitId; else delete m[listing]; try { localStorage.setItem(LISTING_KEY, JSON.stringify(m)); } catch { /* ignore */ } }
+
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'abnb-csv' || !e.target.files[0]) return;
+  const file = e.target.files[0]; e.target.value = '';
+  try {
+    const { items, error } = parseAirbnbCsv(await file.text());
+    if (error) { toast(error, 'error'); return; }
+    openImportPreview(items, 'CSV');
+  } catch { toast('Could not read that file.', 'error'); }
+});
+
+/* ---------- Gmail scan ---------- */
+async function gmailGet(path, token) {
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, { headers: { Authorization: 'Bearer ' + token } });
+  if (r.status === 401 || r.status === 403) { const err = new Error('gmail-auth'); err.auth = true; throw err; }
+  if (!r.ok) throw new Error('Gmail error ' + r.status);
+  return r.json();
+}
+function b64urlText(d) { const bin = atob(String(d || '').replace(/-/g, '+').replace(/_/g, '/')); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); }
+/** Plain text of an email: the text part plus the HTML part turned into text. */
+function messageText(payload) {
+  let plain = '', html = '';
+  (function walk(p) {
+    if (!p) return;
+    if (p.mimeType === 'text/plain' && p.body?.data && !plain) plain = b64urlText(p.body.data);
+    if (p.mimeType === 'text/html' && p.body?.data && !html) html = b64urlText(p.body.data);
+    (p.parts || []).forEach(walk);
+  })(payload);
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('br,p,div,tr,li,h1,h2,h3,h4,td,table').forEach(el => el.append('\n'));
+    html = doc.body?.textContent || '';
+  }
+  return `${plain}\n${html}`.replace(/[ \t]+/g, ' ');
+}
+async function scanGmailForAirbnb(btn, { silent = false } = {}) {
+  const token = gmailToken(true);
+  if (!token) {
+    if (silent) return;
+    const ok = await confirmDialog({ title: 'Sign in to Gmail', message: `Chico Stays needs permission to read Airbnb's "Reservation confirmed" emails in ${EMAIL_CONFIG.GMAIL_ACCOUNT}. You'll come straight back here.`, confirmText: 'Continue' });
+    if (ok) connectGmail({ resume: false, after: 'scan' });
+    return;
+  }
+  if (btn) setBusy(btn, true, 'Checking Gmail…');
+  if (!silent) toast('Checking Gmail for Airbnb bookings…');
+  try {
+    const q = encodeURIComponent('from:airbnb.com subject:(confirmed) newer_than:2y');
+    const list = await gmailGet(`messages?q=${q}&maxResults=100`, token);
+    const ids = (list.messages || []).map(m => m.id);
+    const items = [], seen = new Set();
+    let unreadable = 0;
+    for (let i = 0; i < ids.length; i += 8) {
+      const msgs = await Promise.all(ids.slice(i, i + 8).map(id => gmailGet(`messages/${id}?format=full`, token)));
+      for (const m of msgs) {
+        const subject = (m.payload?.headers || []).find(h => /^subject$/i.test(h.name))?.value || '';
+        const it = parseAirbnbEmail({ subject, text: messageText(m.payload) });
+        if (!it) { unreadable++; continue; }
+        if (seen.has(it.code)) continue;                       // newest email per reservation wins
+        seen.add(it.code); items.push(it);
+      }
+    }
+    state.gmailItems = items;
+    updateBadges();
+    if (silent) { rerender(); return; }
+    if (!items.length) { toast(ids.length ? `Found ${plural(ids.length, 'Airbnb email')}, but couldn't read a reservation in them.` : 'No Airbnb confirmation emails found in this Gmail.', 'error'); return; }
+    openImportPreview(items, 'Gmail', { unreadable });
+  } catch (err) {
+    if (err.auth) { sessionStorage.removeItem(GTOKEN_KEY); if (!silent) connectGmail({ resume: false, after: 'scan' }); return; }
+    if (!silent) toast(friendlyError(err), 'error');
+  } finally { if (btn) setBusy(btn, false); }
+}
+
+/* ---------- preview + apply ---------- */
+function openImportPreview(items, source, { unreadable = 0 } = {}) {
+  const chosen = new Set();          // codes the owner keeps ticked
+  let plan = [];
+  const build = () => {
+    plan = planAirbnbImport(items, { bookings: state.bookings, external: state.external, listingUnit: loadListingUnits() });
+    plan.forEach(p => { if ((p.action === 'update' || p.action === 'create') && !chosen.has('x:' + p.code)) chosen.add(p.code); });
+  };
+  const line = p => {
+    const who = esc(p.guest || p.booking?.guest_name || 'Airbnb guest');
+    const where = p.booking ? `${esc(unitShort(unitById(p.booking.unit_id)))} · ${esc(formatRange(p.booking.check_in, p.booking.check_out))}`
+      : p.create ? `${esc(unitShort(unitById(p.create.unit_id)))} · ${esc(formatRange(p.create.check_in, p.create.check_out))}` : '';
+    let what = '';
+    if (p.action === 'update') {
+      const bits = [];
+      if ('amount' in p.patch) bits.push(`Amount ${formatPHP(p.from)} → <b>${formatPHP(p.payout)}</b>`);
+      if (p.patch.guest_name) bits.push(`Name → <b>${esc(p.patch.guest_name)}</b>`);
+      if (!bits.length) bits.push('Link reservation code');
+      what = bits.join(' · ');
+    } else if (p.action === 'create') what = `New booking · <b>${formatPHP(p.payout)}</b>`;
+    else if (p.action === 'same') what = `Already correct · ${formatPHP(p.payout)}`;
+    else what = esc(p.reason || '');
+    const box = (p.action === 'update' || p.action === 'create')
+      ? `<input type="checkbox" class="imp-cb" data-code="${esc(p.code)}" ${chosen.has(p.code) ? 'checked' : ''} style="width:22px;height:22px;flex:none;margin-top:2px;accent-color:var(--accent)">` : '';
+    return `<label class="act-row" style="cursor:${box ? 'pointer' : 'default'}">${box}<div class="at"><b>${who}</b> <span class="small muted">${esc(p.code)}</span>
+      ${where ? `<div class="sub">${where}</div>` : ''}<div class="sub">${what}</div></div></label>`;
+  };
+  const render = () => {
+    const groups = { update: [], create: [], same: [], unmatched: [], skip: [] };
+    plan.forEach(p => groups[p.action].push(p));
+    const listings = [...new Set(plan.filter(p => p.action === 'unmatched' && p.listing).map(p => p.listing))];
+    const sel = [...chosen].filter(c => !c.startsWith('x:') && plan.some(p => p.code === c && (p.action === 'update' || p.action === 'create'))).length;
+    const section = (title, list) => list.length ? `<div class="group-title"><span>${title}</span><span>${list.length}</span></div><div class="list" style="box-shadow:none;border:1px solid var(--line)">${list.map(line).join('')}</div>` : '';
+    return `
+      <p class="small muted">From ${source === 'CSV' ? 'your Airbnb earnings file' : 'Airbnb emails in Gmail'}: ${plural(items.length, 'reservation')}${unreadable ? ` · ${plural(unreadable, 'email')} couldn't be read` : ''}. Amounts are your <b>payout</b>. Tick what to apply.</p>
+      ${listings.length ? `<div class="notice" style="margin-top:12px;display:block"><b>Which unit is each listing?</b>${listings.map(l => `
+          <div class="field" style="margin:10px 0 0"><label>${esc(l)}</label><select class="input imp-unit" data-listing="${esc(l)}"><option value="">Skip this listing</option>${state.units.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></div>`).join('')}</div>` : ''}
+      ${section('Update', groups.update)}${section('Add as new booking', groups.create)}${section("Can't match", groups.unmatched)}${section('Already correct', groups.same)}${section('Skipped', groups.skip)}
+      <div id="imp-count" data-n="${sel}"></div>`;
+  };
+  build();
+  const wrap = openSheet({
+    title: 'Review Airbnb earnings',
+    body: render(),
+    foot: `<button type="button" class="btn plain" data-action="close-sheet">Cancel</button><button type="button" class="btn" id="imp-apply">Apply</button>`,
+    onMount: w => {
+      const body = $('.sheet-body', w), apply = $('#imp-apply', w);
+      const refreshBtn = () => { const n = Number($('#imp-count', w)?.dataset.n || 0); apply.textContent = n ? `Apply ${plural(n, 'change')}` : 'Nothing to apply'; apply.disabled = !n; };
+      refreshBtn();
+      body.addEventListener('change', e => {
+        if (e.target.classList.contains('imp-cb')) { const c = e.target.dataset.code; if (e.target.checked) { chosen.add(c); chosen.delete('x:' + c); } else { chosen.delete(c); chosen.add('x:' + c); } }
+        if (e.target.classList.contains('imp-unit')) { saveListingUnit(e.target.dataset.listing, e.target.value); build(); }
+        body.innerHTML = render(); refreshBtn();
+      });
+      apply.addEventListener('click', async () => {
+        const todo = plan.filter(p => (p.action === 'update' || p.action === 'create') && chosen.has(p.code));
+        setBusy(apply, true, 'Applying…');
+        let done = 0; const failed = [];
+        for (const p of todo) {
+          try {
+            if (p.action === 'update') await saveRow('bookings', p.booking.id, p.patch);
+            else {
+              const c = findConflict({ unitId: p.create.unit_id, start: p.create.check_in, end: p.create.check_out }, state.bookings, state.blocks);
+              if (c) throw new Error(conflictText(c));
+              await saveRow('bookings', null, p.create);
+            }
+            done++;
+          } catch (err) { failed.push(`${p.guest || p.code}: ${friendlyError(err)}`); }
+        }
+        closeAllSheets(); rerender();
+        if (failed.length) toast(`${plural(done, 'change')} applied. ${failed.length} failed – ${failed[0]}`, 'error');
+        else toast(`${plural(done, 'booking')} updated from Airbnb`);
+        if (source === 'Gmail') state.gmailItems = [];
+      });
+    },
+  });
+  return wrap;
+}
+
 /* ---------- CSV export ---------- */
 function exportCSV() {
   const cell = v => {
@@ -3461,6 +3755,8 @@ const actions = {
   'airbnb-sync': el => syncAirbnb(el),
   'ext-add': el => addDetailsFromExternal(el.dataset.id),
   'ext-open': el => openExternalDetail(el.dataset.id),
+  'gmail-scan': el => scanGmailForAirbnb(el),
+  'review-gmail': () => openImportPreview(state.gmailItems || [], 'Gmail'),
   'email-add-guest': () => { syncEmailFields(); if (emailState.guests.length < EMAIL_CONFIG.MAX_GUESTS) { emailState.guests.push(''); rerenderEmail(); $$('.guest-row .input').pop()?.focus(); } },
   'email-remove-guest': el => { syncEmailFields(); emailState.guests.splice(Number(el.dataset.i), 1); if (!emailState.guests.length) emailState.guests.push(''); rerenderEmail(); },
   'email-remove-photo': el => { syncEmailFields(); const list = emailState[el.dataset.kind]; const [p] = list.splice(Number(el.dataset.i), 1); if (p) URL.revokeObjectURL(p.url); rerenderEmail(); },

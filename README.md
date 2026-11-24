@@ -199,6 +199,23 @@ Booking a Direct/TikTok guest on dates Airbnb already sold is blocked with a war
 
 Keep the links private: anyone with one can see your booked dates. They're stored only in your database.
 
+## Airbnb earnings (payouts and guest names)
+
+Gross earnings for Airbnb bookings use your **Airbnb payout** (after Airbnb's host fee).
+There are two ways to bring them in. Both show a **preview**, and nothing changes until you tap **Apply**.
+
+- **Earnings file (CSV):** in Airbnb, go to **Earnings → Transaction history** (Completed or Upcoming) → **Export CSV**.
+  In Chico Stays, use **Settings → Airbnb earnings → Import Airbnb earnings file**.
+  Rows are matched by confirmation code (HM…). The app fills ₱0 amounts, corrects different amounts,
+  and adds reservations that are on the synced calendar but not entered yet, with the guest's name.
+  The first time, it asks which unit each Airbnb listing name belongs to.
+- **Gmail:** **Settings → Airbnb earnings → Check Gmail for Airbnb bookings** reads Airbnb's
+  "Reservation confirmed" emails (guest name + "You earn" payout). Google asks once for permission
+  to read email. The emails must arrive in the Gmail account the app signs in with
+  (`EMAIL_CONFIG.GMAIL_ACCOUNT`); forward Airbnb emails there if they go to another address.
+  While you're signed in to Gmail, the app checks automatically when it opens and
+  adds a to-do in Activity when it finds payouts to review.
+
 ## Activity (history, to-dos, checks)
 
 Tap the **bell** on the Dashboard (on a computer, **Activity** in the sidebar).

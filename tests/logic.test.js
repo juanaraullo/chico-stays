@@ -12,7 +12,8 @@ vm.createContext(ctx);
 vm.runInContext(code + `;Object.assign(globalThis, { toISO, parseISO, isValidISO, addDays, diffDays, daysInMonth, weekday, todayISO,
   shiftMonth, nightsBetween, rangesOverlap, overlapNights, blockRange, findConflict, buildDayMap, periodStats, yearStats,
   monthStats, ytdGross, validateBooking, validateBlock, parseAmount, formatPHP, formatPct, formatRange,
-  formatLongDate, fillTemplate, emailVars, buildMime, base64UrlAscii, safeFilename });`, ctx);
+  formatLongDate, fillTemplate, emailVars, buildMime, base64UrlAscii, safeFilename,
+  parseCSV, parseMoney, parseAnyDate, parseAirbnbCsv, parseAirbnbEmail, planAirbnbImport });`, ctx);
 const L = ctx;
 
 let pass = 0, fail = 0;
@@ -142,6 +143,44 @@ const bodyB64 = mime.split('Content-Transfer-Encoding: base64\r\n\r\n')[1].split
 eq(Buffer.from(bodyB64, 'base64').toString('utf8'), 'Line 1\r\nLíne 2', 'UTF-8 body round-trips with CRLF');
 eq(mime.trim().endsWith('--B--'), true, 'MIME closing boundary');
 eq(/[+/=]/.test(L.base64UrlAscii(mime)), false, 'base64url has no + / =');
+
+// ---- Airbnb earnings import ----
+eq(L.parseCSV('a,"b, c",d\r\n1,"say ""hi""",3\n'), [['a', 'b, c', 'd'], ['1', 'say "hi"', '3']], 'CSV quotes, commas, CRLF');
+eq([L.parseMoney('₱12,125.00'), L.parseMoney('(500.00)'), L.parseMoney('PHP 1,234'), Number.isNaN(L.parseMoney(''))], [12125, -500, 1234, true], 'money parsing');
+eq([L.parseAnyDate('12/05/2026'), L.parseAnyDate('2026-12-05'), L.parseAnyDate('Dec 5, 2026'), L.parseAnyDate('13/45/2026')], ['2026-12-05', '2026-12-05', '2026-12-05', null], 'date parsing');
+const CSV = [
+  'Date,Arriving by date,Type,Confirmation code,Booking date,Start date,End date,Nights,Guest,Listing,Details,Reference code,Currency,Amount,Paid out,Service fee,Fast pay fee,Cleaning fee,Gross earnings,Occupancy taxes,Earnings year',
+  '11/20/2026,11/21/2026,Payout,,,,,,,,"Transfer to Account ****1234",,PHP,,"20,000.00",,,,,,2026',
+  '11/20/2026,,Reservation,HMABCD1234,11/01/2026,12/05/2026,12/09/2026,4,"Liza Ramos","Cozy 1BR, BGC 24J",,,PHP,"12,125.00",,375.00,,500.00,"12,500.00",,2026',
+  '11/22/2026,,Resolution Adjustment,HMABCD1234,,,,,"Liza Ramos","Cozy 1BR, BGC 24J",,,PHP,-125.00,,,,,,,2026',
+  '11/20/2026,,Reservation,HMOLD00001,10/01/2026,10/10/2026,10/12/2026,2,"Old Guest","Studio BGC 8T",,,PHP,"6,000.00",,,,,,,2026',
+].join('\r\n');
+const pc = L.parseAirbnbCsv(CSV);
+eq(pc.error, null, 'CSV parsed without error');
+const liza = pc.items.find(i => i.code === 'HMABCD1234');
+eq([pc.items.length, liza.payout, liza.guest, liza.checkIn, liza.checkOut, liza.listing], [2, 12000, 'Liza Ramos', '2026-12-05', '2026-12-09', 'Cozy 1BR, BGC 24J'], 'payout rows skipped, adjustments summed by code');
+eq(L.parseAirbnbCsv('Name,Value\nx,1').error.includes('Confirmation code'), true, 'wrong file explained');
+const mail = L.parseAirbnbEmail({ subject: 'Reservation confirmed - Liza Ramos arrives Dec 5',
+  text: 'New booking confirmed! Liza arrives Dec 5.\nCheck-in Sat, Dec 5 2:00 PM Checkout Wed, Dec 9\nConfirmation code\nHMABCD1234\nGuest paid\n₱3,000.00 x 4 nights ₱12,000.00\nCleaning fee ₱500.00\nTotal (PHP) ₱13,250.00\nHost payout\n4 nights room fee ₱12,000.00\nCleaning fee ₱500.00\nHost service fee (3.0%) -₱375.00\nYou earn ₱12,125.00' });
+eq([mail.code, mail.guest, mail.payout, mail.guestPaid], ['HMABCD1234', 'Liza Ramos', 12125, 13250], 'email: code, guest name, payout, guest paid');
+eq(L.parseAirbnbEmail({ subject: 'Hello', text: 'no code here' }), null, 'non-reservation email ignored');
+const ext = [{ reservation_code: 'HMABCD1234', unit_id: 'u24', check_in: '2026-12-05', check_out: '2026-12-09' }, { reservation_code: 'HMNEW00002', unit_id: 'u8', check_in: '2027-01-02', check_out: '2027-01-05' }];
+const bks = [
+  { id: 'b1', unit_id: 'u24', platform: 'airbnb', guest_name: 'Liza Ramos', check_in: '2026-12-05', check_out: '2026-12-09', amount: 0, notes: 'Airbnb HMABCD1234 · phone ends 4321' },
+  { id: 'b2', unit_id: 'u8', platform: 'airbnb', guest_name: 'Same Guest', check_in: '2026-10-10', check_out: '2026-10-12', amount: 6000, notes: null },
+];
+const plan = L.planAirbnbImport([
+  { code: 'HMABCD1234', guest: 'Liza Ramos', payout: 12000 },
+  { code: 'HMOLD00001', guest: 'Old Guest', payout: 6000, checkIn: '2026-10-10', checkOut: '2026-10-12', listing: 'Studio BGC 8T' },
+  { code: 'HMNEW00002', guest: 'New Person', payout: 9000 },
+  { code: 'HMNOPE0003', guest: 'Ghost', payout: 5000, listing: 'Mystery listing' },
+  { code: 'HMZERO0004', guest: 'Zero', payout: NaN },
+], { bookings: bks, external: ext, listingUnit: { 'Studio BGC 8T': 'u8' } });
+eq(plan.map(p => p.action), ['update', 'update', 'create', 'unmatched', 'skip'], 'import plan actions');
+eq(plan[0].patch, { amount: 12000 }, 'fills ₱0 amount from payout');
+eq([plan[1].patch.amount, plan[1].patch.notes], [undefined, 'Airbnb HMOLD00001'], 'same amount: only links the code');
+eq([plan[2].create.unit_id, plan[2].create.check_in, plan[2].create.guest_name, plan[2].create.amount], ['u8', '2027-01-02', 'New Person', 9000], 'creates booking from calendar reservation + payout');
+eq(plan[3].reason.includes('Mystery listing'), true, 'unknown listing asks for a unit');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
