@@ -825,7 +825,7 @@ const EMAIL_CONFIG = {
   DEFAULT_OWNER_MOBILE: '09662775947',
 };
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -2965,6 +2965,9 @@ async function connectGmail({ resume, after = null }) {
     // compose = create guest-email drafts; readonly = read Airbnb confirmation emails for payouts & guest names
     scope: 'https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.readonly', include_granted_scopes: 'true',
     login_hint: EMAIL_CONFIG.GMAIL_ACCOUNT, state: st,
+    // For email reading, always show Google's full permission screen so the
+    // "read email" checkbox can be ticked (otherwise Google silently re-uses the old grant).
+    ...(after === 'scan' ? { prompt: 'consent' } : {}),
   });
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q;
 }
@@ -2993,7 +2996,7 @@ async function resumeAfterGoogle() {
   }
   if (p.error) { toast(p.error === 'access_denied' ? 'Gmail access was not allowed.' : 'Gmail sign-in failed – please try again.', 'error'); return; }
   toast('Gmail connected');
-  if (p.after === 'scan') { setTimeout(() => scanGmailForAirbnb(null), 300); return; }
+  if (p.after === 'scan') { setTimeout(() => scanGmailForAirbnb(null, { fromGoogle: true }), 300); return; }
   if (p.resume && stash) setTimeout(() => createGmailDraft($('[data-action="email-create-draft"]')), 300);
 }
 
@@ -3131,6 +3134,7 @@ function openSignatureSheet() {
    ===================================================================== */
 /** What changed in the app itself (newest first). Claude adds a line per update. */
 const CHANGELOG = [
+  { v: '1.6.1', date: '2026-11-25', text: 'Fix: “Check Gmail” no longer keeps asking to sign in. If Google doesn’t allow reading emails, the app explains how to tick that permission.' },
   { v: '1.6.0', date: '2026-11-25', text: 'Airbnb earnings: import your Airbnb earnings CSV or check Gmail for “Reservation confirmed” emails to fill in payouts and guest names (with a preview before anything changes).' },
   { v: '1.5.0', date: '2026-11-25', text: 'Airbnb calendar sync: your Airbnb reservations appear on the calendars and Dashboard as “Airbnb booking” (code + phone last 4). Add details turns them into full bookings; new and cancelled reservations show in Activity.' },
   { v: '1.4.0', date: '2026-11-25', text: 'New Activity page: a history of every booking change (by you or the AI agent), to-dos, and automatic checks for problems.' },
@@ -3552,11 +3556,30 @@ function messageText(payload) {
   }
   return `${plain}\n${html}`.replace(/[ \t]+/g, ' ');
 }
-async function scanGmailForAirbnb(btn, { silent = false } = {}) {
+/** Google came back without "read email" permission: explain instead of asking again in a loop. */
+function explainMissingReadAccess() {
+  let granted = '';
+  try { granted = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null')?.scope || ''; } catch { /* ignore */ }
+  const names = granted.split(/\s+/).filter(Boolean).map(s => s.replace('https://www.googleapis.com/auth/', ''));
+  openSheet({
+    title: 'Email reading not allowed',
+    body: `<p>Google signed you in, but didn't give Chico Stays permission to <b>read emails</b>, so it can't look for Airbnb's “Reservation confirmed” emails.</p>
+      <ol class="install-steps" style="padding-left:20px;margin-top:12px">
+        <li>Tap <b>Try again</b> and choose <b>${esc(EMAIL_CONFIG.GMAIL_ACCOUNT)}</b>.</li>
+        <li>On Google's permission screen, tick <b>“View your email messages and settings”</b> (or tap <b>Select all</b>).</li>
+        <li>Tap <b>Continue</b>.</li>
+      </ol>
+      <p class="small muted" style="margin-top:10px">Google granted: ${names.length ? esc(names.join(', ')) : 'nothing'}.</p>`,
+    foot: `<button type="button" class="btn plain" data-action="close-sheet">Not now</button><button type="button" class="btn" id="gm-retry">Try again</button>`,
+    onMount: w => $('#gm-retry', w).addEventListener('click', () => connectGmail({ resume: false, after: 'scan' })),
+  });
+}
+async function scanGmailForAirbnb(btn, { silent = false, fromGoogle = false } = {}) {
   const token = gmailToken(true);
   if (!token) {
     if (silent) return;
-    const ok = await confirmDialog({ title: 'Sign in to Gmail', message: `Chico Stays needs permission to read Airbnb's "Reservation confirmed" emails in ${EMAIL_CONFIG.GMAIL_ACCOUNT}. You'll come straight back here.`, confirmText: 'Continue' });
+    if (fromGoogle) { explainMissingReadAccess(); return; }      // never bounce straight back to Google
+    const ok = await confirmDialog({ title: 'Sign in to Gmail', message: `Chico Stays needs permission to read Airbnb's "Reservation confirmed" emails in ${EMAIL_CONFIG.GMAIL_ACCOUNT}. On Google's screen, tick “View your email messages and settings”.`, confirmText: 'Continue' });
     if (ok) connectGmail({ resume: false, after: 'scan' });
     return;
   }
@@ -3584,7 +3607,12 @@ async function scanGmailForAirbnb(btn, { silent = false } = {}) {
     if (!items.length) { toast(ids.length ? `Found ${plural(ids.length, 'Airbnb email')}, but couldn't read a reservation in them.` : 'No Airbnb confirmation emails found in this Gmail.', 'error'); return; }
     openImportPreview(items, 'Gmail', { unreadable });
   } catch (err) {
-    if (err.auth) { sessionStorage.removeItem(GTOKEN_KEY); if (!silent) connectGmail({ resume: false, after: 'scan' }); return; }
+    if (err.auth) {
+      // Keep the token for drafts, but mark it as not able to read; then explain (no automatic re-login loop).
+      try { const t = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null'); if (t) { t.scope = (t.scope || '').replace(/\S*gmail\.readonly\S*/g, '').trim(); sessionStorage.setItem(GTOKEN_KEY, JSON.stringify(t)); } } catch { /* ignore */ }
+      if (!silent) explainMissingReadAccess();
+      return;
+    }
     if (!silent) toast(friendlyError(err), 'error');
   } finally { if (btn) setBusy(btn, false); }
 }
