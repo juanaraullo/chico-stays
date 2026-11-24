@@ -33,9 +33,23 @@
       blocked_dates: [
         { id: uid(), unit_id: u1, reason: 'maintenance', start_date: `${ym}-10`, end_date: `${ym}-11`, note: 'Aircon cleaning' },
       ],
+      activity_log: [],
     };
   }
-  const load = () => { try { return JSON.parse(localStorage.getItem(DB_KEY)) || seed(); } catch { return seed(); } };
+  // Seed history so the Activity page has something realistic to show.
+  function seedActivity(d) {
+    let id = 1; const now = Date.now(), H = 3600e3;
+    const log = (o, agoH) => d.activity_log.unshift({ id: id++, created_at: new Date(now - agoH * H).toISOString(), status: 'open', ...o });
+    d.bookings.forEach((b, i) => log({ kind: 'edit', actor: i === 2 ? 'AI agent' : 'owner@test.dev', entity: 'booking', entity_id: b.id, unit_id: b.unit_id, operation: 'insert', after: b }, 200 - i * 20));
+    const s = d.bookings[3];
+    log({ kind: 'edit', actor: 'owner@test.dev', entity: 'booking', entity_id: s.id, unit_id: s.unit_id, operation: 'update', before: { ...s, amount: 26000, check_out: s.check_out }, after: s }, 30);
+    log({ kind: 'discrepancy', actor: 'AI agent', title: 'Payment doesn’t match the quote', message: `${s.guest_name} sent ₱25,000 but the quoted total was ₱28,000. Please confirm with the guest.`, entity: 'booking', entity_id: s.id }, 5);
+    log({ kind: 'action', actor: 'Claude (AI)', title: 'Turn off public sign-ups', message: 'Supabase → Authentication → Sign In / Providers → switch off "Allow new users to sign up".', ref: 'setup:disable-signups' }, 2);
+    d.activity_log.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    d._actId = id;
+    return d;
+  }
+  const load = () => { try { const d = JSON.parse(localStorage.getItem(DB_KEY)); if (d && !d.activity_log) seedActivity(Object.assign(d, { activity_log: [] })); return d || seedActivity(seed()); } catch { return seedActivity(seed()); } };
   const save = db => localStorage.setItem(DB_KEY, JSON.stringify(db));
   let db = load(); save(db);
 
@@ -63,11 +77,19 @@
     return null;
   }
 
+  function logEdit(table, op, before, after) {
+    if (!['bookings', 'blocked_dates', 'units'].includes(table)) return;
+    const row = after || before;
+    db.activity_log.unshift({ id: db._actId = (db._actId || 1000) + 1, created_at: new Date().toISOString(), kind: 'edit', status: 'open',
+      actor: getSession()?.user?.email || 'system', entity: table === 'bookings' ? 'booking' : table === 'units' ? 'unit' : 'blocked_dates',
+      entity_id: row.id, unit_id: table === 'units' ? row.id : row.unit_id, operation: op, before: before || null, after: after || null });
+  }
   class Query {
     constructor(table) { this.table = table; this.op = 'select'; this.filters = []; this.payload = null; this.isSingle = false; this.rng = null; this.orders = []; }
     select() { if (this.op === 'select') this.op = 'select'; this.returning = true; return this; }
     order(col, o = {}) { this.orders.push([col, o.ascending !== false]); return this; }
     range(a, b) { this.rng = [a, b]; return this; }
+    limit(n) { this.lim = n; return this; }
     insert(p) { this.op = 'insert'; this.payload = p; return this; }
     update(p) { this.op = 'update'; this.payload = p; return this; }
     delete() { this.op = 'delete'; return this; }
@@ -86,6 +108,7 @@
         let out = rows.filter(match);
         for (const [c, asc] of [...this.orders].reverse()) out.sort((a, b) => String(a[c]).localeCompare(String(b[c])) * (asc ? 1 : -1));
         if (this.rng) out = out.slice(this.rng[0], this.rng[1] + 1);
+        if (this.lim) out = out.slice(0, this.lim);
         return { data: JSON.parse(JSON.stringify(out)), error: null };
       }
       if (this.op === 'insert') {
@@ -93,16 +116,22 @@
         if (this.table === 'units') row.is_active = true;
         const err = checkRow(this.table, row, null); if (err) return { data: null, error: err };
         if (this.table === 'bookings') row.nights = diff(row.check_in, row.check_out);
-        rows.push(row); save(db); return { data: row, error: null };
+        if (this.table === 'activity_log') {
+          if (!['email', 'dismiss', 'action'].includes(row.kind)) return { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } };
+          Object.assign(row, { id: db._actId = (db._actId || 1000) + 1, actor: getSession()?.user?.email, status: 'open' });
+          rows.unshift(row); save(db); return { data: row, error: null };
+        }
+        rows.push(row); logEdit(this.table, 'insert', null, row); save(db); return { data: row, error: null };
       }
       if (this.op === 'update') {
         const r = rows.find(match); if (!r) return { data: null, error: { code: 'PGRST116', message: 'not found' } };
         const next = { ...r, ...this.payload, updated_at: new Date().toISOString() };
         const err = checkRow(this.table, next, r.id); if (err) return { data: null, error: err };
         if (this.table === 'bookings') next.nights = diff(next.check_in, next.check_out);
-        Object.assign(r, next); save(db); return { data: r, error: null };
+        const before = { ...r };
+        Object.assign(r, next); logEdit(this.table, 'update', before, r); save(db); return { data: r, error: null };
       }
-      if (this.op === 'delete') { db[this.table] = rows.filter(r => !match(r)); save(db); return { data: null, error: null }; }
+      if (this.op === 'delete') { rows.filter(match).forEach(r => logEdit(this.table, 'delete', r, null)); db[this.table] = rows.filter(r => !match(r)); save(db); return { data: null, error: null }; }
     }
   }
 

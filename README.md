@@ -181,6 +181,28 @@ asks again with one tap.
 
 Your signature (Settings → Signature) is saved on each device. Draw it once per phone or computer.
 
+## Activity (history, to-dos, checks)
+
+Tap the **bell** on the Dashboard (on a computer, **Activity** in the sidebar).
+- **To do:** things that need you. This includes to-dos left by the AI agent or Claude
+  (tap **Done**) and automatic checks: ₱0 amounts, very low nightly rates, more guests
+  than the form allows, and guest emails due in the next 3 days (tap **Dismiss** if they're fine).
+- **History:** every booking, block and unit change, with who made it
+  (**You**, **AI agent** or another team member) and what changed, e.g. *Amount ₱11,250 → ₱0*.
+- **App updates:** what was changed in the app and when.
+
+History is written by the database itself, so changes made by the inquiry agent,
+another phone or the Supabase dashboard are all included. Entries can't be edited
+or deleted from the app.
+
+**For an AI agent** using the secret key, leave a to-do or flag a problem like this:
+```sql
+insert into public.activity_log (kind, actor, title, message, entity, entity_id)
+values ('discrepancy', 'AI agent', 'Payment doesn''t match the quote',
+        'Guest sent ₱25,000 but the quote was ₱28,000.', 'booking', '<booking id>');
+```
+Through the REST API, POST the same fields to `/rest/v1/activity_log`.
+
 ## Using the app
 
 - **Dashboard**: combined totals for the selected year, each unit with a mini
