@@ -825,7 +825,7 @@ const EMAIL_CONFIG = {
   DEFAULT_OWNER_MOBILE: '09662775947',
 };
 
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.6.2';
 const LS_CONFIG_KEY = 'chico.supabase.config';
 const LS_PREFS_KEY = 'chico.prefs';
 
@@ -1542,7 +1542,7 @@ async function doEnterApp(session) {
   route();
   resumeAfterGoogle();
   maybeAutoSyncAirbnb();
-  if (gmailToken(true)) scanGmailForAirbnb(null, { silent: true });
+  if (gmailToken()) scanGmailForAirbnb(null, { silent: true });
 }
 
 function teardown() {
@@ -2940,6 +2940,26 @@ function gmailToken(needRead = false) {
   } catch { /* ignore */ }
   return null;
 }
+/**
+ * A token that can read email, or null. Google's sign-in redirect sometimes
+ * lists only some of the permissions the token really has (it left out
+ * "read email" for an account that had granted it), so when the saved list
+ * doesn't include reading, ask Google about the token itself before giving up.
+ */
+async function gmailReadToken() {
+  const quick = gmailToken(true);
+  if (quick) return quick;
+  const token = gmailToken();
+  if (!token) return null;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(token));
+    if (!r.ok) return null;
+    const info = await r.json();
+    const t = JSON.parse(sessionStorage.getItem(GTOKEN_KEY) || 'null');
+    if (t && t.token === token && info.scope) { t.scope = info.scope; t.checked = true; sessionStorage.setItem(GTOKEN_KEY, JSON.stringify(t)); }
+    return /gmail\.readonly/.test(info.scope || '') ? token : null;
+  } catch { return null; }
+}
 function oauthRedirectUri() { return location.origin + location.pathname.replace(/index\.html$/, ''); }
 /** Called at startup: picks up the token Google put in the URL and cleans the URL. */
 function captureGoogleRedirect() {
@@ -3134,6 +3154,7 @@ function openSignatureSheet() {
    ===================================================================== */
 /** What changed in the app itself (newest first). Claude adds a line per update. */
 const CHANGELOG = [
+  { v: '1.6.2', date: '2026-11-25', text: 'Fix: “Check Gmail” said email reading wasn’t allowed even after you allowed it. The app now asks Google what was really allowed, and waits and retries when Gmail is busy instead of calling it a permission problem.' },
   { v: '1.6.1', date: '2026-11-25', text: 'Fix: “Check Gmail” no longer keeps asking to sign in. If Google doesn’t allow reading emails, the app explains how to tick that permission.' },
   { v: '1.6.0', date: '2026-11-25', text: 'Airbnb earnings: import your Airbnb earnings CSV or check Gmail for “Reservation confirmed” emails to fill in payouts and guest names (with a preview before anything changes).' },
   { v: '1.5.0', date: '2026-11-25', text: 'Airbnb calendar sync: your Airbnb reservations appear on the calendars and Dashboard as “Airbnb booking” (code + phone last 4). Add details turns them into full bookings; new and cancelled reservations show in Activity.' },
@@ -3533,11 +3554,26 @@ document.addEventListener('change', async e => {
 });
 
 /* ---------- Gmail scan ---------- */
-async function gmailGet(path, token) {
-  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, { headers: { Authorization: 'Bearer ' + token } });
-  if (r.status === 401 || r.status === 403) { const err = new Error('gmail-auth'); err.auth = true; throw err; }
-  if (!r.ok) throw new Error('Gmail error ' + r.status);
-  return r.json();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+/**
+ * One Gmail API read. Google answers 403 both for "no permission" and for
+ * "too many requests this minute"; only the first means signing in again.
+ * Busy answers are retried a few times with a growing pause.
+ */
+async function gmailGet(path, token, { waits = [2000, 6000, 15000] } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) return r.json();
+    let reason = '';
+    try { const e = (await r.json())?.error; reason = [e?.status, ...(e?.errors || []).map(x => x.reason), e?.message].filter(Boolean).join(' '); } catch { /* ignore */ }
+    const busy = r.status === 429 || (r.status === 403 && /rateLimit|userRateLimit|quota|RESOURCE_EXHAUSTED/i.test(reason)) || r.status >= 500;
+    if (busy) {
+      if (attempt < waits.length) { await sleep(waits[attempt]); continue; }
+      const err = new Error('Gmail is busy right now (too many requests). Please try again in a minute.'); err.busy = true; throw err;
+    }
+    if (r.status === 401 || r.status === 403) { const err = new Error('gmail-auth'); err.auth = true; err.reason = reason; throw err; }
+    throw new Error('Gmail error ' + r.status);
+  }
 }
 function b64urlText(d) { const bin = atob(String(d || '').replace(/-/g, '+').replace(/_/g, '/')); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); }
 /** Plain text of an email: the text part plus the HTML part turned into text. */
@@ -3575,7 +3611,7 @@ function explainMissingReadAccess() {
   });
 }
 async function scanGmailForAirbnb(btn, { silent = false, fromGoogle = false } = {}) {
-  const token = gmailToken(true);
+  const token = await gmailReadToken();
   if (!token) {
     if (silent) return;
     if (fromGoogle) { explainMissingReadAccess(); return; }      // never bounce straight back to Google
@@ -3591,8 +3627,8 @@ async function scanGmailForAirbnb(btn, { silent = false, fromGoogle = false } = 
     const ids = (list.messages || []).map(m => m.id);
     const items = [], seen = new Set();
     let unreadable = 0;
-    for (let i = 0; i < ids.length; i += 8) {
-      const msgs = await Promise.all(ids.slice(i, i + 8).map(id => gmailGet(`messages/${id}?format=full`, token)));
+    for (let i = 0; i < ids.length; i += 4) {
+      const msgs = await Promise.all(ids.slice(i, i + 4).map(id => gmailGet(`messages/${id}?format=full`, token)));
       for (const m of msgs) {
         const subject = (m.payload?.headers || []).find(h => /^subject$/i.test(h.name))?.value || '';
         const it = parseAirbnbEmail({ subject, text: messageText(m.payload) });
@@ -3613,7 +3649,7 @@ async function scanGmailForAirbnb(btn, { silent = false, fromGoogle = false } = 
       if (!silent) explainMissingReadAccess();
       return;
     }
-    if (!silent) toast(friendlyError(err), 'error');
+    if (!silent) toast(err.busy ? err.message : friendlyError(err), 'error');
   } finally { if (btn) setBusy(btn, false); }
 }
 
